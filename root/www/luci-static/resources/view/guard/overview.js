@@ -41,8 +41,8 @@ var CSS = [
 '.guard .g-bar select{height:26px;line-height:1;font-size:12.5px;padding:0 8px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--txt);min-height:0}',
 '.guard .g-bar .sp{flex:1}',
 '.guard .g-bar .muted{color:var(--mute);font-size:12.5px}',
-// 数据不足时下半部分不空着：用背景画「空行」分隔线，和数据行节奏对齐（从表头下方起算）
-'.guard .g-tw{flex:1 1 auto;min-height:calc(8*var(--row) + var(--head));overflow:auto;background-image:linear-gradient(to bottom,var(--soft) 0 1px,transparent 1px);background-size:100% var(--row);background-position:0 var(--head);background-repeat:repeat-y}',
+// 数据不足时下面留白，只由最后一条数据的下边框收尾，不再逐行画分隔线
+'.guard .g-tw{flex:1 1 auto;min-height:calc(8*var(--row) + var(--head));overflow:auto}',
 '.guard .g-table{width:100%;min-width:760px;margin:0;border:0;border-collapse:collapse;table-layout:fixed;background:none;box-shadow:none}',
 '.guard .g-table th,.guard .g-table td{padding:0 14px;border:0;border-bottom:1px solid var(--soft);text-align:left;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:none}',
 '.guard .g-table th{height:var(--head);font-size:12px;font-weight:600;letter-spacing:.02em;color:#6b7280;background:#f2f4f8;position:sticky;top:0;z-index:1}',
@@ -55,7 +55,7 @@ var CSS = [
 '.guard .g-table tbody tr{background:#fff}',
 '.guard .g-table tbody tr:nth-child(even){background:#f7f8fb}',
 '.guard .g-table tbody tr:hover{background:#eef3ff}',
-'.guard .g-table tbody tr:last-child td{border-bottom:none}',
+'.guard .g-table tbody tr:last-child td{border-bottom:1px solid var(--soft)}',
 '.guard .g-table .num{text-align:center;font-variant-numeric:tabular-nums}',
 '.guard .g-num0{color:#b3bac6}',
 '.guard .g-time{color:var(--mute);font-variant-numeric:tabular-nums}',
@@ -210,7 +210,10 @@ return view.extend({
 
 		refs.cols = E('colgroup', {});
 		refs.thead = E('thead', {});
-		refs.tbody = E('tbody', {}, [emptyRow(7, '加载中…')]);
+		// 注意：E() 只把字符串当文本节点，HTML 必须走 innerHTML，
+		// 否则刷新瞬间会把 <tr><td> 源码直接显示出来。
+		refs.tbody = E('tbody', {});
+		refs.tbody.innerHTML = emptyRow(7, '加载中…');
 
 		var table = E('table', { 'class': 'g-table' }, [refs.cols, refs.thead, refs.tbody]);
 		var tableWrap = E('div', { 'class': 'g-tw' }, [table]);
