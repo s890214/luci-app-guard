@@ -67,6 +67,7 @@ var CSS = [
 '.guard .g-tag.rate{background:#fdf3e3;color:#bf7212}',
 '.guard .g-ex{display:inline-block;padding:0 7px;border-radius:5px;background:#eaf1ff;color:#2f6fed;font-size:11.5px;line-height:18px;font-weight:500}',
 '.guard .g-dash{color:#ccd1db}',
+'.guard .g-self{color:#5c6474;font-size:12px}',
 '.guard .g-table td.g-empty{height:auto;padding:0}',
 '.guard .g-empty>div{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;height:180px;color:#a7aeba;font-size:13px}',
 '.guard .g-empty svg{opacity:.55}',
@@ -97,7 +98,7 @@ function api(qs) {
 var COLS = {
 	sources: [['来源 IP', 24, 0], ['连接数', 7, 1], ['TCP', 6, 1], ['UDP', 6, 1], ['端口数', 7, 1], ['端口', 36, 0], ['最近', 14, 0]],
 	alerts:  [['时间', 19, 0], ['类型', 10, 0], ['来源 IP', 26, 0], ['连接', 6, 1], ['端口', 39, 0]],
-	events:  [['时间', 20, 0], ['来源 IP', 28, 0], ['目标端口', 11, 1], ['协议', 9, 0], ['对外端口', 32, 0]]
+	events:  [['时间', 18, 0], ['来源 IP', 26, 0], ['目标 IP', 26, 0], ['目标端口', 10, 1], ['协议', 8, 0], ['对外端口', 12, 0]]
 };
 
 var EMPTY_ICON = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" ' +
@@ -115,6 +116,14 @@ function cellNum(v) {
 	return '<td class="num' + (v ? '' : ' g-num0') + '">' + v + '</td>';
 }
 
+// 目标 IP = DNAT 之后的真实落点。落回路由器自己时写「本机」更好读，
+// 转发到内网设备（NAS 之类）时就直接显示那台机器的 IP。
+function cellDst(d) {
+	if (!d) return '<td class="g-dash">—</td>';
+	if (d === window.location.hostname) return '<td><span class="g-self">本机</span></td>';
+	return '<td class="g-ip" title="' + esc(d) + '">' + esc(d) + '</td>';
+}
+
 function rowHTML(tab, x) {
 	if (tab === 'sources')
 		return '<tr><td class="g-ip" title="' + esc(x.ip) + '">' + esc(x.ip) + '</td>' +
@@ -129,7 +138,8 @@ function rowHTML(tab, x) {
 			'<td class="g-ports" title="' + esc(x.ports) + '">' + esc(x.ports) + '</td></tr>';
 	}
 	return '<tr><td class="g-time">' + esc(x.t) + '</td>' +
-		'<td class="g-ip" title="' + esc(x.ip) + '">' + esc(x.ip) + '</td>' + cellNum(x.dport) +
+		'<td class="g-ip" title="' + esc(x.ip) + '">' + esc(x.ip) + '</td>' + cellDst(x.dst) +
+		cellNum(x.dport) +
 		'<td class="g-proto">' + esc(x.proto) + '</td>' +
 		'<td>' + (x.exposed ? '<span class="g-ex">对外</span>' : '<span class="g-dash">—</span>') + '</td></tr>';
 }
