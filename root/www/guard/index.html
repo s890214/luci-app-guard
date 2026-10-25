@@ -125,11 +125,19 @@
 </div>
 
 <script>
-const EMBED = new URLSearchParams(location.search).get('embed') === '1';
-if (EMBED) document.body.classList.add('embed');
+const PARAMS = new URLSearchParams(location.search);
+const EMBED = PARAMS.get('embed') === '1';
+if (EMBED) {
+  document.body.classList.add('embed');
+  const bg = PARAMS.get('bg');
+  if (bg) document.body.style.background = bg;
+}
+let lastH = 0;
 function reportHeight(){
   if (window.parent === window) return;
-  const h = Math.ceil(document.documentElement.scrollHeight);
+  const h = Math.ceil(document.body.getBoundingClientRect().height);
+  if (Math.abs(h - lastH) < 2) return;
+  lastH = h;
   window.parent.postMessage({ guardHeight: h }, '*');
 }
 const $ = id => document.getElementById(id);
