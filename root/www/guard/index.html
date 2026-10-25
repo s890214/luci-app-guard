@@ -8,6 +8,7 @@
   :root{
     --bg:#f4f5f7; --card:#fff; --line:#e6e8ec; --text:#1f2430; --muted:#7a8194;
     --accent:#2f6fed; --red:#d64545; --orange:#c97a12; --green:#2f8f5b; --blue:#2f6fed;
+    --row-h:37px;
   }
   *{box-sizing:border-box}
   body{margin:0;padding:18px;background:var(--bg);color:var(--text);
@@ -26,27 +27,43 @@
   .tabs{display:flex;border-bottom:1px solid var(--line);background:#fafbfc}
   .tab{padding:10px 16px;cursor:pointer;font-size:13px;color:var(--muted);border-bottom:2px solid transparent}
   .tab.on{color:var(--text);border-bottom-color:var(--accent);font-weight:600;background:#fff}
-  .bar{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid #f0f1f4;flex-wrap:wrap}
+  .bar{display:flex;align-items:center;gap:10px;padding:0 14px;border-bottom:1px solid #f0f1f4;flex-wrap:nowrap;height:44px;overflow:hidden}
   .bar .sp{flex:1}
   select,button{font:inherit;font-size:12.5px;padding:3px 8px;border:1px solid var(--line);
                 border-radius:6px;background:#fff;color:var(--text);cursor:pointer}
   button:disabled{opacity:.4;cursor:default}
-  table{width:100%;border-collapse:collapse}
-  th,td{padding:8px 14px;border-bottom:1px solid #f0f1f4;text-align:left;font-size:13px}
-  th{color:var(--muted);font-weight:500;font-size:12px;background:#fafbfc}
+  /* 固定高度：20 行 × 行高 + 表头，三个页签高度一致，切换不跳动 */
+  .table-wrap{min-height:calc(var(--row-h) * 20 + 36px);overflow:hidden}
+  table{width:100%;border-collapse:collapse;table-layout:fixed}
+  th,td{padding:8px 14px;border-bottom:1px solid #f0f1f4;text-align:left;font-size:13px;
+        white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  th{color:var(--muted);font-weight:500;font-size:12px;background:#fafbfc;height:34px}
+  tbody tr{height:var(--row-h)}
   tr:last-child td{border-bottom:none}
   td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   .ip{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
   .tag{display:inline-block;padding:1px 7px;border-radius:999px;font-size:11.5px;line-height:1.7}
   .t-scan{background:#fdecec;color:var(--red)}
   .t-rate{background:#fdf3e3;color:var(--orange)}
-  .ex{display:inline-block;padding:0 5px;border-radius:4px;background:#eaf1ff;color:var(--blue);font-size:11px;margin-left:4px}
+  .ex{display:inline-block;padding:0 5px;border-radius:4px;background:#eaf1ff;color:var(--blue);font-size:11px}
   .muted{color:var(--muted)}
-  .empty{padding:22px 14px;color:var(--muted);font-size:13px;text-align:center}
-  .ports{color:var(--muted);font-size:12px;word-break:break-all}
-  .pager{display:flex;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid #f0f1f4;color:var(--muted);font-size:12.5px}
+  .empty{padding:22px 14px;color:var(--muted);font-size:13px;text-align:center;white-space:normal}
+  .ports{color:var(--muted);font-size:12px}
+  .pager{display:flex;align-items:center;gap:8px;padding:0 14px;border-top:1px solid #f0f1f4;color:var(--muted);font-size:12.5px;height:46px}
+  .pager .sp{flex:1}
   footer{color:var(--muted);font-size:12px;text-align:center;padding:10px 0 18px}
-  @media(max-width:720px){.cards{grid-template-columns:repeat(2,1fr)}th,td{padding:7px 10px}}
+  /* 嵌入 LuCI 时去掉外层留白和重复标题 */
+  body.embed{padding:0;background:transparent}
+  body.embed h1{display:none}
+  body.embed .wrap{max-width:none}
+  body.embed header{margin-bottom:8px}
+  body.embed footer{padding:6px 0 4px}
+  @media(max-width:720px){
+    .cards{grid-template-columns:repeat(2,1fr)}
+    th,td{padding:7px 8px;font-size:12px}
+    .table-wrap{min-height:calc(31px * 20 + 34px)}
+    tbody tr{height:31px}
+  }
 </style>
 </head>
 <body>
@@ -85,21 +102,22 @@
         <option value="tcp">仅 TCP</option>
         <option value="all">全部</option>
       </select>
-      <span class="muted">每页</span>
-      <select id="size">
-        <option>20</option><option selected>50</option><option>100</option>
-      </select>
       <span class="sp"></span>
       <span class="muted" id="count"></span>
     </div>
-    <table>
-      <thead id="thead"></thead>
-      <tbody id="tbody"><tr><td class="empty">加载中…</td></tr></tbody>
-    </table>
+    <div class="table-wrap">
+      <table>
+        <colgroup id="cols"></colgroup>
+        <thead id="thead"></thead>
+        <tbody id="tbody"><tr><td class="empty">加载中…</td></tr></tbody>
+      </table>
+    </div>
     <div class="pager">
       <button id="prev">上一页</button>
       <span id="pageinfo">–</span>
       <button id="next">下一页</button>
+      <span class="sp"></span>
+      <span class="muted">每页 20 条</span>
     </div>
   </div>
 
@@ -107,16 +125,26 @@
 </div>
 
 <script>
+const EMBED = new URLSearchParams(location.search).get('embed') === '1';
+if (EMBED) document.body.classList.add('embed');
+function reportHeight(){
+  if (window.parent === window) return;
+  const h = Math.ceil(document.documentElement.scrollHeight);
+  window.parent.postMessage({ guardHeight: h }, '*');
+}
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const TYPE = {PORT_SCAN:['端口扫描','t-scan'], HIGH_RATE:['高频连接','t-rate']};
-const HEAD = {
-  sources: ['来源 IP','连接数','TCP','UDP','端口数','端口','最近'],
-  alerts:  ['时间','类型','来源 IP','连接','端口'],
-  events:  ['时间','来源 IP','目标端口','协议','对外端口']
+const SIZE = 20;
+
+// 每个页签的列：[表头, 宽度%, 右对齐]
+const COLS = {
+  sources: [['来源 IP',26,0],['连接数',9,1],['TCP',8,1],['UDP',8,1],['端口数',9,1],['端口',32,0],['最近',8,0]],
+  alerts:  [['时间',24,0],['类型',13,0],['来源 IP',27,0],['连接',10,1],['端口',26,0]],
+  events:  [['时间',24,0],['来源 IP',28,0],['目标端口',14,1],['协议',12,0],['对外端口',22,0]]
 };
 
-let tab = 'sources', range = '24h', page = 1, size = 50, total = 0, proto = 'tcp';
+let tab = 'sources', range = '24h', page = 1, total = 0, proto = 'tcp';
 
 function dur(sec){
   sec = Number(sec||0);
@@ -127,20 +155,23 @@ function dur(sec){
 }
 
 function head(){
-  const cols = HEAD[tab];
-  $('thead').innerHTML = '<tr>' + cols.map((c,i) =>
-    `<th class="${(i>0 && tab!=='events')||(tab==='events'&&i===2)?'num':''}">${c}</th>`).join('') + '</tr>';
+  const cols = COLS[tab];
+  $('cols').innerHTML = cols.map(c => `<col style="width:${c[1]}%">`).join('');
+  $('thead').innerHTML = '<tr>' + cols.map(c =>
+    `<th class="${c[2] ? 'num' : ''}">${c[0]}</th>`).join('') + '</tr>';
 }
 
 function row(x){
   if (tab === 'sources')
     return `<tr><td class="ip">${esc(x.ip)}</td><td class="num">${x.total}</td><td class="num">${x.tcp}</td>
-      <td class="num">${x.udp}</td><td class="num">${x.ports}</td><td class="ports">${esc(x.portlist)}</td>
+      <td class="num">${x.udp}</td><td class="num">${x.ports}</td>
+      <td class="ports" title="${esc(x.portlist)}">${esc(x.portlist)}</td>
       <td class="muted">${esc(x.last)}</td></tr>`;
   if (tab === 'alerts'){
     const [name, cls] = TYPE[x.type] || [x.type, ''];
     return `<tr><td class="muted">${esc(x.t)}</td><td><span class="tag ${cls}">${esc(name)}</span></td>
-      <td class="ip">${esc(x.ip)}</td><td class="num">${x.count}</td><td class="ports">${esc(x.ports)}</td></tr>`;
+      <td class="ip">${esc(x.ip)}</td><td class="num">${x.count}</td>
+      <td class="ports" title="${esc(x.ports)}">${esc(x.ports)}</td></tr>`;
   }
   return `<tr><td class="muted">${esc(x.t)}</td><td class="ip">${esc(x.ip)}</td><td class="num">${x.dport}</td>
     <td class="muted">${esc(x.proto)}</td><td>${x.exposed ? '<span class="ex">对外</span>' : ''}</td></tr>`;
@@ -168,20 +199,20 @@ async function loadSummary(){
 
 async function loadList(){
   head();
-  const q = new URLSearchParams({view:tab, range, page, size, proto});
+  const q = new URLSearchParams({view:tab, range, page, size:SIZE, proto});
   try{
     const d = await (await fetch('/cgi-bin/guard?' + q, {cache:'no-store'})).json();
     total = d.total || 0;
     const rows = d.rows || [];
     $('tbody').innerHTML = rows.length ? rows.map(row).join('')
-      : `<tr><td colspan="${HEAD[tab].length}" class="empty">暂无数据</td></tr>`;
-    const pages = Math.max(1, Math.ceil(total / size));
+      : `<tr><td colspan="${COLS[tab].length}" class="empty">暂无数据</td></tr>`;
+    const pages = Math.max(1, Math.ceil(total / SIZE));
     $('count').textContent = `共 ${total} 条`;
     $('pageinfo').textContent = `第 ${page} / ${pages} 页`;
     $('prev').disabled = page <= 1;
     $('next').disabled = page >= pages;
   }catch(e){
-    $('tbody').innerHTML = `<tr><td colspan="${HEAD[tab].length}" class="empty">读取失败</td></tr>`;
+    $('tbody').innerHTML = `<tr><td colspan="${COLS[tab].length}" class="empty">读取失败</td></tr>`;
   }
 }
 
@@ -190,16 +221,17 @@ document.querySelectorAll('.tab').forEach(el => el.onclick = () => {
   el.classList.add('on');
   tab = el.dataset.tab;
   page = 1;
-  $('rangeLabel').style.display = tab === 'events' ? 'none' : '';
-  $('range').style.display = tab === 'events' ? 'none' : '';
-  $('protoLabel').style.display = tab === 'alerts' ? 'none' : '';
-  $('proto').style.display = tab === 'alerts' ? 'none' : '';
+  // 用 visibility 而不是 display，保证工具栏高度不随页签变化
+  const hideRange = tab === 'events', hideProto = tab === 'alerts';
+  $('rangeLabel').style.visibility = hideRange ? 'hidden' : 'visible';
+  $('range').style.visibility = hideRange ? 'hidden' : 'visible';
+  $('protoLabel').style.visibility = hideProto ? 'hidden' : 'visible';
+  $('proto').style.visibility = hideProto ? 'hidden' : 'visible';
   loadList();
 });
 
 $('range').onchange = e => { range = e.target.value; page = 1; loadList(); };
 $('proto').onchange = e => { proto = e.target.value; page = 1; loadList(); };
-$('size').onchange = e => { size = Number(e.target.value); page = 1; loadList(); };
 $('prev').onclick = () => { if (page > 1) { page--; loadList(); } };
 $('next').onclick = () => { page++; loadList(); };
 
@@ -207,6 +239,8 @@ loadSummary();
 loadList();
 setInterval(loadSummary, 5000);
 setInterval(loadList, 15000);
+if (EMBED) { reportHeight(); setInterval(reportHeight, 1000); }
+window.addEventListener('resize', reportHeight);
 </script>
 </body>
 </html>

@@ -7,8 +7,8 @@ OpenWrt / ImmortalWrt 上的**外部访问监控**插件：基于 conntrack 采�
 - 全端口监控：任何入站连接都记录，不依赖端口清单；对外端口自动从 nft（`lucky666.cn_auto` + `dstnat_wan`）同步，用于标注
 - 两类告警（阈值可配）：60 秒内 ≥N 个不同端口 = 端口扫描；≥M 次连接 = 高频
 - 三级时间范围：24 小时（内存明细）、7 天、30 天（每日汇总落盘）
-- 列表全部支持翻页（20/50/100 条每页）
-- LuCI 菜单入口：服务 → 外部访问监控
+- 列表固定每页 20 条，三个页签等高，切换不跳动
+- LuCI 菜单入口：服务 → 外部访问监控（页面内嵌在 LuCI 里，不跳转）
 - 常驻内存约 1.3 MB，纯 ash + awk，无额外依赖
 
 ## 安装
@@ -22,7 +22,7 @@ ssh root@192.168.1.1 'sh /tmp/luci-app-guard/install.sh'
 # 将本目录放入 package/ 后 make menuconfig（LuCI → Applications → luci-app-guard）
 ```
 
-安装后访问 `http://<路由器IP>/guard/`，或 LuCI 菜单「服务 → 外部访问监控」。
+安装后从 LuCI 菜单「服务 → 外部访问监控」进入（地址 `/cgi-bin/luci/admin/services/guard`）；也可以直接访问 `http://<路由器IP>/guard/`。
 
 ## 配置
 
