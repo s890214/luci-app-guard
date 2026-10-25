@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>外部访问监控</title>
+<style>
+  :root{
+    --bg:#f4f5f7; --card:#fff; --line:#e6e8ec; --text:#1f2430; --muted:#7a8194;
+    --accent:#2f6fed; --red:#d64545; --orange:#c97a12; --green:#2f8f5b; --blue:#2f6fed;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:18px;background:var(--bg);color:var(--text);
+       font:14px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+  .wrap{max-width:1120px;margin:0 auto}
+  header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+  h1{font-size:19px;margin:0;font-weight:600}
+  .meta{color:var(--muted);font-size:12px}
+  .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-right:5px}
+  .dot.err{background:var(--red)}
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .card .k{color:var(--muted);font-size:12px}
+  .card .v{font-size:24px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .tabs{display:flex;border-bottom:1px solid var(--line);background:#fafbfc}
+  .tab{padding:10px 16px;cursor:pointer;font-size:13px;color:var(--muted);border-bottom:2px solid transparent}
+  .tab.on{color:var(--text);border-bottom-color:var(--accent);font-weight:600;background:#fff}
+  .bar{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid #f0f1f4;flex-wrap:wrap}
+  .bar .sp{flex:1}
+  select,button{font:inherit;font-size:12.5px;padding:3px 8px;border:1px solid var(--line);
+                border-radius:6px;background:#fff;color:var(--text);cursor:pointer}
+  button:disabled{opacity:.4;cursor:default}
+  table{width:100%;border-collapse:collapse}
+  th,td{padding:8px 14px;border-bottom:1px solid #f0f1f4;text-align:left;font-size:13px}
+  th{color:var(--muted);font-weight:500;font-size:12px;background:#fafbfc}
+  tr:last-child td{border-bottom:none}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .ip{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
+  .tag{display:inline-block;padding:1px 7px;border-radius:999px;font-size:11.5px;line-height:1.7}
+  .t-scan{background:#fdecec;color:var(--red)}
+  .t-rate{background:#fdf3e3;color:var(--orange)}
+  .ex{display:inline-block;padding:0 5px;border-radius:4px;background:#eaf1ff;color:var(--blue);font-size:11px;margin-left:4px}
+  .muted{color:var(--muted)}
+  .empty{padding:22px 14px;color:var(--muted);font-size:13px;text-align:center}
+  .ports{color:var(--muted);font-size:12px;word-break:break-all}
+  .pager{display:flex;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid #f0f1f4;color:var(--muted);font-size:12.5px}
+  footer{color:var(--muted);font-size:12px;text-align:center;padding:10px 0 18px}
+  @media(max-width:720px){.cards{grid-template-columns:repeat(2,1fr)}th,td{padding:7px 10px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>外部访问监控</h1>
+    <span class="meta"><span class="dot" id="dot"></span><span id="status">连接中…</span></span>
+    <span class="meta" id="wan"></span>
+    <span class="meta" id="uptime"></span>
+    <span class="meta" id="updated"></span>
+    <span class="meta" id="exposed"></span>
+  </header>
+
+  <div class="cards">
+    <div class="card"><div class="k">24 小时连接数</div><div class="v" id="s-conn">–</div></div>
+    <div class="card"><div class="k">24 小时来源 IP</div><div class="v" id="s-ips">–</div></div>
+    <div class="card"><div class="k">当前活跃外部连接</div><div class="v" id="s-active">–</div></div>
+    <div class="card"><div class="k">24 小时告警</div><div class="v" id="s-alerts">–</div></div>
+  </div>
+
+  <div class="panel">
+    <div class="tabs">
+      <div class="tab on" data-tab="sources">来源 IP</div>
+      <div class="tab" data-tab="alerts">告警事件</div>
+      <div class="tab" data-tab="events">最近连接</div>
+    </div>
+    <div class="bar">
+      <span class="muted" id="rangeLabel">时间范围</span>
+      <select id="range">
+        <option value="24h">24 小时</option>
+        <option value="7d">7 天</option>
+        <option value="30d">30 天</option>
+      </select>
+      <span class="muted" id="protoLabel">协议</span>
+      <select id="proto">
+        <option value="tcp">仅 TCP</option>
+        <option value="all">全部</option>
+      </select>
+      <span class="muted">每页</span>
+      <select id="size">
+        <option>20</option><option selected>50</option><option>100</option>
+      </select>
+      <span class="sp"></span>
+      <span class="muted" id="count"></span>
+    </div>
+    <table>
+      <thead id="thead"></thead>
+      <tbody id="tbody"><tr><td class="empty">加载中…</td></tr></tbody>
+    </table>
+    <div class="pager">
+      <button id="prev">上一页</button>
+      <span id="pageinfo">–</span>
+      <button id="next">下一页</button>
+    </div>
+  </div>
+
+  <footer>conntrack 采样 · 只记录不封禁 · 概览每 5 秒刷新，列表每 15 秒刷新</footer>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const TYPE = {PORT_SCAN:['端口扫描','t-scan'], HIGH_RATE:['高频连接','t-rate']};
+const HEAD = {
+  sources: ['来源 IP','连接数','TCP','UDP','端口数','端口','最近'],
+  alerts:  ['时间','类型','来源 IP','连接','端口'],
+  events:  ['时间','来源 IP','目标端口','协议','对外端口']
+};
+
+let tab = 'sources', range = '24h', page = 1, size = 50, total = 0, proto = 'tcp';
+
+function dur(sec){
+  sec = Number(sec||0);
+  const d = Math.floor(sec/86400), h = Math.floor(sec%86400/3600), m = Math.floor(sec%3600/60);
+  if (d) return `已运行 ${d} 天 ${h} 小时`;
+  if (h) return `已运行 ${h} 小时 ${m} 分`;
+  return `已运行 ${m} 分`;
+}
+
+function head(){
+  const cols = HEAD[tab];
+  $('thead').innerHTML = '<tr>' + cols.map((c,i) =>
+    `<th class="${(i>0 && tab!=='events')||(tab==='events'&&i===2)?'num':''}">${c}</th>`).join('') + '</tr>';
+}
+
+function row(x){
+  if (tab === 'sources')
+    return `<tr><td class="ip">${esc(x.ip)}</td><td class="num">${x.total}</td><td class="num">${x.tcp}</td>
+      <td class="num">${x.udp}</td><td class="num">${x.ports}</td><td class="ports">${esc(x.portlist)}</td>
+      <td class="muted">${esc(x.last)}</td></tr>`;
+  if (tab === 'alerts'){
+    const [name, cls] = TYPE[x.type] || [x.type, ''];
+    return `<tr><td class="muted">${esc(x.t)}</td><td><span class="tag ${cls}">${esc(name)}</span></td>
+      <td class="ip">${esc(x.ip)}</td><td class="num">${x.count}</td><td class="ports">${esc(x.ports)}</td></tr>`;
+  }
+  return `<tr><td class="muted">${esc(x.t)}</td><td class="ip">${esc(x.ip)}</td><td class="num">${x.dport}</td>
+    <td class="muted">${esc(x.proto)}</td><td>${x.exposed ? '<span class="ex">对外</span>' : ''}</td></tr>`;
+}
+
+async function loadSummary(){
+  try{
+    const d = await (await fetch('/cgi-bin/guard?view=summary', {cache:'no-store'})).json();
+    if (d.error) throw new Error(d.error);
+    $('dot').className = 'dot';
+    $('status').textContent = '采集中';
+    $('wan').textContent = d.wan ? 'WAN ' + d.wan : '';
+    $('uptime').textContent = dur(d.uptime);
+    $('updated').textContent = '更新于 ' + (d.human || '—');
+    $('exposed').textContent = d.exposed ? '对外端口 ' + d.exposed.trim() : '';
+    $('s-conn').textContent = d.stats.conn24;
+    $('s-ips').textContent = d.stats.ips24;
+    $('s-active').textContent = d.stats.active;
+    $('s-alerts').textContent = d.stats.alerts24;
+  }catch(e){
+    $('dot').className = 'dot err';
+    $('status').textContent = '采集器未运行或数据不可读';
+  }
+}
+
+async function loadList(){
+  head();
+  const q = new URLSearchParams({view:tab, range, page, size, proto});
+  try{
+    const d = await (await fetch('/cgi-bin/guard?' + q, {cache:'no-store'})).json();
+    total = d.total || 0;
+    const rows = d.rows || [];
+    $('tbody').innerHTML = rows.length ? rows.map(row).join('')
+      : `<tr><td colspan="${HEAD[tab].length}" class="empty">暂无数据</td></tr>`;
+    const pages = Math.max(1, Math.ceil(total / size));
+    $('count').textContent = `共 ${total} 条`;
+    $('pageinfo').textContent = `第 ${page} / ${pages} 页`;
+    $('prev').disabled = page <= 1;
+    $('next').disabled = page >= pages;
+  }catch(e){
+    $('tbody').innerHTML = `<tr><td colspan="${HEAD[tab].length}" class="empty">读取失败</td></tr>`;
+  }
+}
+
+document.querySelectorAll('.tab').forEach(el => el.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
+  el.classList.add('on');
+  tab = el.dataset.tab;
+  page = 1;
+  $('rangeLabel').style.display = tab === 'events' ? 'none' : '';
+  $('range').style.display = tab === 'events' ? 'none' : '';
+  $('protoLabel').style.display = tab === 'alerts' ? 'none' : '';
+  $('proto').style.display = tab === 'alerts' ? 'none' : '';
+  loadList();
+});
+
+$('range').onchange = e => { range = e.target.value; page = 1; loadList(); };
+$('proto').onchange = e => { proto = e.target.value; page = 1; loadList(); };
+$('size').onchange = e => { size = Number(e.target.value); page = 1; loadList(); };
+$('prev').onclick = () => { if (page > 1) { page--; loadList(); } };
+$('next').onclick = () => { page++; loadList(); };
+
+loadSummary();
+loadList();
+setInterval(loadSummary, 5000);
+setInterval(loadList, 15000);
+</script>
+</body>
+</html>

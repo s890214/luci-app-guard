@@ -1,0 +1,10 @@
+{
+	"admin/services/guard": {
+		"title": "外部访问监控",
+		"order": 61,
+		"action": {
+			"type": "view",
+			"path": "guard/overview"
+		}
+	}
+}

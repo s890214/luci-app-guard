@@ -1,0 +1,109 @@
+#!/bin/sh
+# luci-app-guard 数据接口
+# view=summary|sources|alerts|events & range=24h|7d|30d & page=N & size=N & proto=tcp|all
+
+DIR=/tmp/guard
+DATA=/etc/guard
+DAILY=$DATA/daily
+ALERTS=$DATA/alerts.tsv
+
+qs() { echo "$QUERY_STRING" | tr '&' '\n' | awk -F= -v k="$1" '$1==k {print $2; exit}'; }
+num() { case "$1" in ''|*[!0-9]*) echo "$2" ;; *) echo "$1" ;; esac; }
+
+view=$(qs view);  [ -z "$view" ] && view=summary
+range=$(qs range); [ -z "$range" ] && range=24h
+page=$(num "$(qs page)" 1)
+size=$(num "$(qs size)" 50)
+proto=$(qs proto); [ -z "$proto" ] && proto=tcp
+[ "$size" -gt 200 ] && size=200
+[ "$page" -lt 1 ] && page=1
+
+now=$(date +%s)
+today=$(date +%F)
+
+printf 'Content-Type: application/json; charset=utf-8\r\n'
+printf 'Cache-Control: no-store\r\n'
+printf '\r\n'
+
+case "$range" in
+	7d)  days=7 ;;
+	30d) days=30 ;;
+	*)   days=1 ;;
+esac
+
+sources_24h() { [ -s "$DIR/ips.tsv" ] && cat "$DIR/ips.tsv"; }
+
+sources_range() {
+	cut=$(date -d "@$((now - days*86400))" +%F)
+	for f in "$DAILY"/*.tsv; do
+		[ -f "$f" ] || continue
+		b=$(basename "$f" .tsv)
+		[ "$b" = "$today" ] && continue
+		[ "$b" \< "$cut" ] && continue
+		cat "$f"
+	done
+	[ -s "$DIR/today.tsv" ] && awk -F'\t' '{print $1"\t"$9"\t"$10"\t"$5"\t"$8"\t"$3"\t"$4}' "$DIR/today.tsv"
+}
+
+case "$view" in
+summary)
+	cat "$DIR/state.json" 2>/dev/null || printf '{"error":"collector not ready"}'
+	;;
+
+sources)
+	if [ "$days" -le 1 ]; then
+		src=$(sources_24h | awk -F'\t' '{printf "%s\t%d\t%d\t%d\t%d\t%s\t%d\n", $1, $9+$10, $9, $10, $5, $8, $4}')
+	else
+		src=$(sources_range | awk -F'\t' '
+			{ ip=$1; tcp[ip]+=$2; udp[ip]+=$3; ports[ip]+=$4
+			  if (!(ip in first) || $6+0 < first[ip]) first[ip]=$6+0
+			  if ($7+0 > last[ip]) last[ip]=$7+0
+			  n=split($5,p,","); for (i=1;i<=n;i++) if (index(","pl[ip]",", "," p[i] ",")==0) pl[ip]=pl[ip] (pl[ip]==""?"":",") p[i]
+			}
+			END { for (ip in tcp) printf "%s\t%d\t%d\t%d\t%d\t%s\t%d\n", ip, tcp[ip]+udp[ip], tcp[ip], udp[ip], ports[ip], pl[ip], last[ip] }')
+	fi
+	# 默认只看有 TCP 的来源；all 模式额外保留连接数 >=10 的 UDP 来源
+	if [ "$proto" = "all" ]; then
+		src=$(printf '%s\n' "$src" | awk -F'\t' 'NF')
+	else
+		src=$(printf '%s\n' "$src" | awk -F'\t' 'NF && $3>0')
+	fi
+	total=$(printf '%s\n' "$src" | grep -c . )
+	rows=""
+	[ -n "$src" ] && rows=$(printf '%s\n' "$src" | sort -t"$(printf '\t')" -k2 -nr | awk -F'\t' -v p="$page" -v s="$size" '
+		NR > (p-1)*s && NR <= p*s {
+			if (n++) printf ","
+			printf "{\"ip\":\"%s\",\"total\":%d,\"tcp\":%d,\"udp\":%d,\"ports\":%d,\"portlist\":\"%s\",\"last\":\"%s\"}", $1, $2, $3, $4, $5, $6, strftime("%m-%d %H:%M", $7)
+		}')
+	printf '{"total":%d,"page":%d,"size":%d,"rows":[%s]}' "${total:-0}" "$page" "$size" "$rows"
+	;;
+
+alerts)
+	cut=$((now - days*86400))
+	src=$(awk -F'|' -v cut="$cut" '$1>=cut && NF>=5' "$ALERTS" 2>/dev/null | sort -t'|' -k1 -nr)
+	total=$(printf '%s\n' "$src" | grep -c . )
+	rows=""
+	[ -n "$src" ] && rows=$(printf '%s\n' "$src" | awk -F'|' -v p="$page" -v s="$size" '
+		NR > (p-1)*s && NR <= p*s {
+			if (n++) printf ","
+			printf "{\"t\":\"%s\",\"type\":\"%s\",\"ip\":\"%s\",\"count\":%d,\"ports\":\"%s\"}", strftime("%Y-%m-%d %H:%M:%S", $1), $2, $3, $4, $5
+		}')
+	printf '{"total":%d,"page":%d,"size":%d,"rows":[%s]}' "${total:-0}" "$page" "$size" "$rows"
+	;;
+
+events)
+	src=$(awk -v pr="$proto" -v cut=$((now-86400)) 'NF>=5 && ($4==pr || pr=="all") && $1>=cut' "$DIR/conn.log" 2>/dev/null | sort -k1 -nr)
+	total=$(printf '%s\n' "$src" | grep -c . )
+	rows=""
+	[ -n "$src" ] && rows=$(printf '%s\n' "$src" | awk -v p="$page" -v s="$size" '
+		NR > (p-1)*s && NR <= p*s {
+			if (n++) printf ","
+			printf "{\"t\":\"%s\",\"ip\":\"%s\",\"dport\":%d,\"proto\":\"%s\",\"exposed\":%d}", strftime("%m-%d %H:%M:%S", $1), $2, $3, $4, $5
+		}')
+	printf '{"total":%d,"page":%d,"size":%d,"rows":[%s]}' "${total:-0}" "$page" "$size" "$rows"
+	;;
+
+*)
+	printf '{"error":"unknown view"}'
+	;;
+esac

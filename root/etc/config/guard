@@ -1,0 +1,12 @@
+config guard 'main'
+	option enabled '1'
+	# 采样间隔（秒）
+	option interval '5'
+	# 60 秒内命中多少个不同端口算端口扫描
+	option scan_ports '5'
+	# 60 秒内多少次连接算高频
+	option scan_conns '30'
+	# 每日汇总保留天数
+	option retain_days '30'
+	# 告警保留条数
+	option alert_keep '5000'
