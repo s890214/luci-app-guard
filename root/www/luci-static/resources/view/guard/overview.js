@@ -2,30 +2,31 @@
 'require view';
 'require poll';
 
-var ST = { tab: 'sources', range: '24h', page: 1, size: 20, proto: 'tcp', total: 0 };
+var ST = { tab: 'sources', range: '24h', page: 1, size: 15, proto: 'tcp', total: 0 };
 
 var CSS = [
 '.guard{font-size:13px;color:#1f2430}',
-'.guard .g-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:0 0 8px}',
-'.guard .g-head h2{margin:0;font-size:17px;font-weight:600}',
+'.guard .g-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 8px}',
+'.guard .g-title{font-size:17px;font-weight:600;line-height:1.4;margin:0;padding:0;background:none;border:0;box-shadow:none}',
 '.guard .g-meta{display:flex;gap:10px;flex-wrap:wrap;color:#7a8194;font-size:12px}',
 '.guard .g-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#2f8f5b;margin-right:4px;vertical-align:middle}',
 '.guard .g-dot.err{background:#d64545}',
 '.guard .g-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px}',
-'.guard .g-card{background:#fff;border:1px solid #e6e8ec;border-radius:8px;padding:6px 10px}',
+'.guard .g-card{background:#fff;border:1px solid #e6e8ec;border-radius:8px;padding:8px 12px}',
 '.guard .g-card .k{color:#7a8194;font-size:12px}',
-'.guard .g-card .v{font-size:18px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums;line-height:1.25}',
+'.guard .g-card .v{font-size:19px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums;line-height:1.3}',
 '.guard .g-panel{background:#fff;border:1px solid #e6e8ec;border-radius:8px;overflow:hidden}',
 '.guard .g-tabs{display:flex;border-bottom:1px solid #e6e8ec;background:#fafbfc}',
-'.guard .g-tab{padding:6px 12px;cursor:pointer;font-size:12.5px;color:#7a8194;border-bottom:2px solid transparent}',
+'.guard .g-tab{padding:8px 14px;cursor:pointer;font-size:12.5px;color:#7a8194;border-bottom:2px solid transparent}',
 '.guard .g-tab.on{color:#1f2430;border-bottom-color:#5e72e4;font-weight:600;background:#fff}',
-'.guard .g-bar{display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid #f0f1f4;height:34px}',
-'.guard .g-bar select{font-size:12px;padding:2px 6px;border:1px solid #e6e8ec;border-radius:5px;background:#fff;color:#1f2430}',
+'.guard .g-bar{display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid #f0f1f4;height:38px}',
+'.guard .g-bar select{height:26px;line-height:1;font-size:12px;padding:0 6px;border:1px solid #e6e8ec;border-radius:5px;background:#fff;color:#1f2430;min-height:0}',
 '.guard .g-bar .sp{flex:1}',
 '.guard .g-bar .muted{color:#7a8194;font-size:12px}',
-'.guard .g-table{width:100%;border-collapse:collapse;table-layout:fixed}',
-'.guard .g-table th,.guard .g-table td{padding:4px 12px;border-bottom:1px solid #f0f1f4;text-align:left;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
-'.guard .g-table th{color:#7a8194;font-weight:500;font-size:11.5px;background:#fafbfc;height:28px}',
+'.guard .g-tw{min-height:calc(15 * 32px + 30px)}',
+'.guard .g-table{width:100%;border-collapse:collapse;table-layout:fixed;background:none}',
+'.guard .g-table th,.guard .g-table td{padding:6px 12px;border-bottom:1px solid #f0f1f4;text-align:left;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:none}',
+'.guard .g-table th{color:#7a8194;font-weight:500;font-size:11.5px;background:#fafbfc;height:30px}',
 '.guard .g-table tr:last-child td{border-bottom:none}',
 '.guard .g-table .num{text-align:right;font-variant-numeric:tabular-nums}',
 '.guard .g-ip{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}',
@@ -33,11 +34,11 @@ var CSS = [
 '.guard .g-tag.scan{background:#fdecec;color:#d64545}',
 '.guard .g-tag.rate{background:#fdf3e3;color:#c97a12}',
 '.guard .g-ex{display:inline-block;padding:0 5px;border-radius:4px;background:#eaf1ff;color:#2f6fed;font-size:11px}',
-'.guard .g-pager{display:flex;align-items:center;gap:8px;padding:0 12px;border-top:1px solid #f0f1f4;height:32px;color:#7a8194;font-size:12px}',
+'.guard .g-pager{display:flex;align-items:center;gap:8px;padding:0 12px;border-top:1px solid #f0f1f4;height:36px;color:#7a8194;font-size:12px}',
 '.guard .g-pager .sp{flex:1}',
-'.guard .g-pager button{font-size:12px;padding:2px 8px;border:1px solid #e6e8ec;border-radius:5px;background:#fff;color:#1f2430;cursor:pointer}',
+'.guard .g-pager button{height:26px;line-height:1;font-size:12px;padding:0 10px;border:1px solid #e6e8ec;border-radius:5px;background:#fff;color:#1f2430;cursor:pointer;min-height:0}',
 '.guard .g-pager button:disabled{opacity:.4;cursor:default}',
-'.guard .g-empty{padding:20px;text-align:center;color:#7a8194}',
+'.guard .g-empty{padding:24px;text-align:center;color:#7a8194}',
 '.guard .g-ports{color:#7a8194;font-size:11.5px}',
 '@media(max-width:720px){.guard .g-cards{grid-template-columns:repeat(2,1fr)}}'
 ].join('\n');
@@ -81,7 +82,7 @@ return view.extend({
 		var refs = {};
 
 		var head = E('div', { 'class': 'g-head' }, [
-			E('h2', {}, '外部访问监控'),
+			E('div', { 'class': 'g-title' }, '外部访问监控'),
 			refs.meta = E('div', { 'class': 'g-meta' }, [
 				refs.dot = E('span', { 'class': 'g-dot' }),
 				refs.status = E('span', {}, '连接中…'),
@@ -137,6 +138,7 @@ return view.extend({
 		refs.tbody = E('tbody', {}, [E('tr', {}, [E('td', { 'class': 'g-empty', 'colspan': 7 }, '加载中…')])]);
 
 		var table = E('table', { 'class': 'g-table' }, [refs.cols, refs.thead, refs.tbody]);
+		var tableWrap = E('div', { 'class': 'g-tw' }, [table]);
 
 		refs.prev = E('button', { 'click': function() { if (ST.page > 1) { ST.page--; loadList(); } } }, '上一页');
 		refs.next = E('button', { 'click': function() { ST.page++; loadList(); } }, '下一页');
@@ -145,10 +147,10 @@ return view.extend({
 		var pager = E('div', { 'class': 'g-pager' }, [
 			refs.prev, refs.pageinfo, refs.next,
 			E('span', { 'class': 'sp' }),
-			E('span', {}, '每页 20 条')
+			E('span', {}, '每页 15 条')
 		]);
 
-		var panel = E('div', { 'class': 'g-panel' }, [refs.tabs, bar, table, pager]);
+		var panel = E('div', { 'class': 'g-panel' }, [refs.tabs, bar, tableWrap, pager]);
 
 		var root = E('div', { 'class': 'guard' }, [E('style', {}, CSS), head, cards, panel]);
 
