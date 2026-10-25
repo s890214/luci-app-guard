@@ -134,11 +134,41 @@ function rowHTML(tab, x) {
 		'<td>' + (x.exposed ? '<span class="g-ex">对外</span>' : '<span class="g-dash">—</span>') + '</td></tr>';
 }
 
-// 对外端口一长串太吵：只显示前 4 个，其余折叠成 +N
+// 对外端口：把连续端口合并成区间（55508 55509 -> 55508-55509），
+// 超过 MAX 段再折叠成 +N。原始列表由 dnsmasq 的 dport 排序输出，但可能重复/乱序，先规范化。
+var EXPOSED_MAX = 10;
+
+function aggPorts(s) {
+	var arr = String(s || '').replace(/[,\s]+/g, ' ').trim().split(' ')
+		.map(function(v) { return parseInt(v, 10); })
+		.filter(function(n) { return n > 0 && n < 65536; });
+	if (!arr.length) return [];
+
+	arr.sort(function(a, b) { return a - b; });
+
+	var uniq = [];
+	for (var i = 0; i < arr.length; i++)
+		if (!i || arr[i] !== arr[i - 1]) uniq.push(arr[i]);
+
+	var out = [], st = uniq[0], en = uniq[0];
+	for (var j = 1; j < uniq.length; j++) {
+		if (uniq[j] === en + 1) { en = uniq[j]; continue; }
+		out.push(st === en ? String(st) : st + '-' + en);
+		st = en = uniq[j];
+	}
+	out.push(st === en ? String(st) : st + '-' + en);
+	return out;
+}
+
 function fmtExposed(s) {
-	var a = String(s || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
-	if (!a.length) return '';
-	return a.length > 4 ? a.slice(0, 4).join(' ') + ' +' + (a.length - 4) : a.join(' ');
+	var segs = aggPorts(s);
+	if (!segs.length) return { text: '', title: '' };
+	return {
+		text: segs.length > EXPOSED_MAX
+			? segs.slice(0, EXPOSED_MAX).join(' ') + ' +' + (segs.length - EXPOSED_MAX)
+			: segs.join(' '),
+		title: segs.length > EXPOSED_MAX ? segs.join(' ') : ''
+	};
 }
 
 return view.extend({
@@ -294,8 +324,8 @@ return view.extend({
 					Math.floor((d.uptime % 86400) / 3600) + ' 小时';
 				refs.updated.textContent = d.human ? '更新于 ' + d.human : '';
 				var ex = fmtExposed(d.exposed);
-				refs.exposed.textContent = ex ? '对外端口 ' + ex : '';
-				refs.exposed.title = String(d.exposed || '').replace(/\s+/g, ' ').trim();
+				refs.exposed.textContent = ex.text ? '对外端口 ' + ex.text : '';
+				refs.exposed.title = ex.title;
 				refs['c-conn'].textContent = d.stats.conn24;
 				refs['c-ips'].textContent = d.stats.ips24;
 				refs['c-active'].textContent = d.stats.active;
