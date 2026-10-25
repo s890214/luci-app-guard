@@ -52,12 +52,26 @@
   .pager{display:flex;align-items:center;gap:8px;padding:0 14px;border-top:1px solid #f0f1f4;color:var(--muted);font-size:12.5px;height:46px}
   .pager .sp{flex:1}
   footer{color:var(--muted);font-size:12px;text-align:center;padding:10px 0 18px}
-  /* 嵌入 LuCI 时去掉外层留白和重复标题 */
-  body.embed{padding:0;background:transparent}
+  /* 嵌入 LuCI：铺满可用高度，外层不出滚动条，表格内部滚动 */
+  body.embed{padding:0;background:var(--bg);height:100vh;overflow:hidden;display:flex;flex-direction:column}
   body.embed h1{display:none}
-  body.embed .wrap{max-width:none}
-  body.embed header{margin-bottom:8px}
-  body.embed footer{padding:6px 0 4px}
+  body.embed .wrap{max-width:none;flex:1;display:flex;flex-direction:column;min-height:0;padding:6px 10px}
+  body.embed .cards{flex:none;margin-bottom:6px;gap:6px}
+  body.embed .card{padding:6px 10px;border-radius:8px}
+  body.embed .card .k{font-size:11px}
+  body.embed .card .v{font-size:18px;line-height:1.2}
+  body.embed .panel{flex:1;display:flex;flex-direction:column;min-height:0}
+  body.embed .tabs{flex:none}
+  body.embed .tab{padding:6px 12px;font-size:12.5px}
+  body.embed .bar{flex:none;height:36px}
+  body.embed .table-wrap{flex:1;min-height:0;overflow-y:auto}
+  body.embed table{font-size:12.5px}
+  body.embed th,body.embed td{padding:4px 10px}
+  body.embed th{height:28px}
+  body.embed tbody tr{height:29px}
+  body.embed .pager{flex:none;height:34px;font-size:11.5px;gap:6px}
+  body.embed .pager .meta{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:62%}
+  body.embed footer{display:none}
   @media(max-width:720px){
     .cards{grid-template-columns:repeat(2,1fr)}
     th,td{padding:7px 8px;font-size:12px}
@@ -70,11 +84,8 @@
 <div class="wrap">
   <header>
     <h1>外部访问监控</h1>
-    <span class="meta"><span class="dot" id="dot"></span><span id="status">连接中…</span></span>
-    <span class="meta" id="wan"></span>
-    <span class="meta" id="uptime"></span>
-    <span class="meta" id="updated"></span>
-    <span class="meta" id="exposed"></span>
+    <span class="meta" id="meta"><span class="dot" id="dot"></span><span id="status">连接中…</span>
+      <span id="wan"></span><span id="uptime"></span><span id="updated"></span><span id="exposed"></span></span>
   </header>
 
   <div class="cards">
@@ -113,11 +124,12 @@
       </table>
     </div>
     <div class="pager">
+      <span class="meta" id="pagerMeta"></span>
+      <span class="sp"></span>
       <button id="prev">上一页</button>
       <span id="pageinfo">–</span>
       <button id="next">下一页</button>
-      <span class="sp"></span>
-      <span class="muted">每页 20 条</span>
+      <span class="muted" style="margin-left:10px">每页 20 条</span>
     </div>
   </div>
 
@@ -131,14 +143,12 @@ if (EMBED) {
   document.body.classList.add('embed');
   const bg = PARAMS.get('bg');
   if (bg) document.body.style.background = bg;
-}
-let lastH = 0;
-function reportHeight(){
-  if (window.parent === window) return;
-  const h = Math.ceil(document.body.getBoundingClientRect().height);
-  if (Math.abs(h - lastH) < 2) return;
-  lastH = h;
-  window.parent.postMessage({ guardHeight: h }, '*');
+  // 嵌入时不再单独占一行：状态信息移到底部翻页栏，页面直接从卡片开始
+  const meta = document.getElementById('meta');
+  const slot = document.getElementById('pagerMeta');
+  if (meta && slot) slot.appendChild(meta);
+  const hd = document.querySelector('header');
+  if (hd) hd.remove();
 }
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -247,8 +257,6 @@ loadSummary();
 loadList();
 setInterval(loadSummary, 5000);
 setInterval(loadList, 15000);
-if (EMBED) { reportHeight(); setInterval(reportHeight, 1000); }
-window.addEventListener('resize', reportHeight);
 </script>
 </body>
 </html>
