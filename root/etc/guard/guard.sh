@@ -108,6 +108,7 @@ aggregate() {
 }
 
 # 按落点聚合：优先级 class 连接数 来源数 最近 落点 端口 协议 描述
+# 先汇总 24h 有流量的端口，再补上 exposed/upnp 清单里 24h 没有流量的端口（count=0）。
 aggregate_ports() {
 	awk -v MAPDIR="$DIR" -v now="$1" -v wanip="$2" "$(cat "$LIB")"'
 		{
@@ -127,7 +128,34 @@ aggregate_ports() {
 				printf "%d\t%s\t%d\t%d\t%d\t%s\t%s\t%s\t%s\n",
 					prio(cl[k]) * 1000000 - cnt[k], cl[k], cnt[k], sc[k], last[k], a[1], a[2], a[3], updesc(a[3], a[2])
 			}
-		}' "$DIR/conn.log" | sort -t "$TAB" -k1 -n | head -n 800 > "$DIR/ports.tsv"
+		}' "$DIR/conn.log" > "$DIR/ports.new"
+
+	# 补暴露面库存：lucky 端口 + UPnP 映射，即使 24h 无流量也列出来。
+	awk -F'	' -v dir="$DIR" '
+		{
+			print
+			seenL[$7] = 1
+			seenU[$6 "|" $7 "|" $8] = 1
+		}
+		END {
+			while ((getline l < (dir "/exposed.txt")) > 0) {
+				n = split(l, e, " ")
+				for (i = 1; i <= n; i++) {
+					if (e[i] == "" || (e[i] in seenL)) continue
+					print "0	L	0	0	0	192.168.1.1	" e[i] "	tcp	lucky 公网服务"
+				}
+			}
+			while ((getline l < (dir "/upnp.tsv")) > 0) {
+				split(l, a, "	")
+				if (a[1] == "" || a[2] == "") continue
+				pr = tolower(a[1])
+				k = a[3] "|" a[2] "|" pr
+				if (k in seenU) continue
+				seenU[k] = 1
+				print "2000000	U	0	0	0	" a[3] "	" a[2] "	" pr "	" a[5]
+			}
+		}' "$DIR/ports.new" | sort -t "$TAB" -k1 -n | head -n 800 > "$DIR/ports.tsv"
+	rm -f "$DIR/ports.new"
 }
 
 # 落盘当天汇总：基线(重启前) + 今日实时，按 IP 合并

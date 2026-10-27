@@ -104,8 +104,8 @@ sources)
 			cnt++
 			if (cnt > (PAGE - 1) * SIZE && cnt <= PAGE * SIZE) {
 				if (rows != "") rows = rows ","
-				rows = rows sprintf("{\"ip\":\"%s\",\"total\":%d,\"tcp\":%d,\"udp\":%d,\"ports\":%d,\"portlist\":\"%s\",\"last\":\"%s\",\"host\":\"%s\",\"country\":\"%s\",\"region\":\"%s\",\"isp\":\"%s\",\"watch\":%d}",
-					j(ip), total, tcp, udp, ports, j(pl), strftime("%m-%d %H:%M", last), j(HOST[dst]), j(C[ip]), j(R[ip]), j(I[ip]), w)
+				rows = rows sprintf("{\"ip\":\"%s\",\"total\":%d,\"tcp\":%d,\"udp\":%d,\"ports\":%d,\"portlist\":\"%s\",\"last\":\"%s\",\"host\":\"%s\",\"country\":\"%s\",\"region\":\"%s\",\"isp\":\"%s\",\"watch\":%d,\"dst\":\"%s\"}",
+					j(ip), total, tcp, udp, ports, j(pl), strftime("%m-%d %H:%M", last), j(HOST[dst]), j(C[ip]), j(R[ip]), j(I[ip]), w, j(dst))
 			}
 		}
 		END { printf "{\"total\":%d,\"page\":%d,\"size\":%d,\"rows\":[%s]}", cnt, PAGE, SIZE, rows }'
@@ -123,7 +123,7 @@ ports)
 			if (rn > (PAGE - 1) * SIZE && rn <= PAGE * SIZE) {
 				if (rows != "") rows = rows ","
 				rows = rows sprintf("{\"dst\":\"%s\",\"dport\":%d,\"proto\":\"%s\",\"count\":%d,\"srcs\":%d,\"last\":\"%s\",\"class\":\"%s\",\"host\":\"%s\",\"desc\":\"%s\"}",
-					j(dst), dp, pr, cnt, sc, strftime("%m-%d %H:%M", last), c, j(HOST[dst] != "" ? HOST[dst] : dst), j(desc))
+					j(dst), dp, pr, cnt, sc, (last + 0 > 0 ? strftime("%m-%d %H:%M", last) : "—"), c, j(HOST[dst] != "" ? HOST[dst] : dst), j(desc))
 			}
 		}
 		END { printf "{\"total\":%d,\"page\":%d,\"size\":%d,\"rows\":[%s]}", rn, PAGE, SIZE, rows }' "$DIR/ports.tsv"

@@ -2,7 +2,7 @@
 'require view';
 'require poll';
 
-var ST = { tab: 'sources', range: '24h', page: 1, size: 15, proto: 'tcp', only: 'watch', total: 0 };
+var ST = { tab: 'sources', range: '24h', page: 1, size: 15, proto: 'all', only: 'watch', total: 0 };
 
 var CSS = [
 '.guard{--line:#e9ecf2;--soft:#f2f4f8;--txt:#1f2430;--mute:#79808f;--main:#5e72e4;--navy:#33409c;--row:33px;--head:32px;--sh:0 1px 2px rgba(17,24,39,.04),0 2px 8px rgba(17,24,39,.04);display:flex;flex-direction:column;font-size:13px;line-height:1.5;color:var(--txt)}',
@@ -104,10 +104,10 @@ function api(qs) {
 }
 
 var COLS = {
-	sources: [['来源 IP', 19, 0], ['归属地', 25, 0], ['设备', 14, 0], ['连接', 7, 1], ['TCP', 5, 1], ['UDP', 5, 1], ['关注', 6, 1], ['最近', 19, 0]],
-	ports:   [['设备', 16, 0], ['目标 IP', 13, 0], ['端口', 8, 1], ['归属', 27, 0], ['外部来源', 10, 1], ['连接', 9, 1], ['最近', 17, 0]],
-	alerts:  [['时间', 18, 0], ['类型', 10, 0], ['来源 IP', 15, 0], ['归属地', 22, 0], ['连接', 6, 1], ['端口', 29, 0]],
-	events:  [['时间', 14, 0], ['来源 IP', 15, 0], ['归属地', 17, 0], ['设备', 13, 0], ['端口', 7, 1], ['协议', 6, 0], ['判定', 28, 0]]
+	sources: [['来源 IP', 19, 0], ['归属地', 24, 0], ['主要落点', 14, 0], ['连接数', 7, 1], ['TCP', 5, 1], ['UDP', 5, 1], ['公网命中', 7, 1], ['最近', 19, 0]],
+	ports:   [['落点', 24, 0], ['端口', 9, 1], ['类型', 26, 0], ['协议', 7, 0], ['来源数', 10, 1], ['连接数', 8, 1], ['最近', 16, 0]],
+	alerts:  [['时间', 18, 0], ['类型', 10, 0], ['来源 IP', 15, 0], ['归属地', 22, 0], ['连接数', 6, 1], ['端口', 29, 0]],
+	events:  [['时间', 14, 0], ['来源 IP', 15, 0], ['归属地', 17, 0], ['落点', 13, 0], ['端口', 7, 1], ['协议', 6, 0], ['类型', 28, 0]]
 };
 
 var EMPTY_ICON = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" ' +
@@ -138,15 +138,18 @@ function cellGeo(x) {
 	return '<td class="g-geo" title="' + esc(full) + '">' + esc(geoText(x)) + '</td>';
 }
 
-// 只显示设备名；没有名字就留空（端口落点表另有目标 IP 列）
+// 落点：有设备名显示名字，没名字显示 IP；悬浮统一给「名字 · IP」
 function cellHost(host, ip) {
-	if (!host || host === ip) return '<td class="g-dash" title="' + esc(ip || '') + '">—</td>';
+	if (!host && !ip) return '<td class="g-dash">—</td>';
+	if (!host) return '<td class="g-ip" title="' + esc(ip) + '">' + esc(ip) + '</td>';
+	if (host === ip) return '<td class="g-ip" title="' + esc(ip) + '">' + esc(ip) + '</td>';
 	return '<td class="g-host" title="' + esc(host + (ip ? ' · ' + ip : '')) + '">' + esc(host) + '</td>';
 }
 
-// 事件流没有单独的目标 IP 列：没设备名时退回显示 IP，避免丢信息
+// 事件流的落点：路由器自身统一显示“路由器”，悬浮带上 LAN/WAN 地址
 function cellDev(host, ip) {
-	if (ip && ip === ST.wan) return '<td><span class="g-self">本机</span></td>';
+	if (ip && ip === ST.wan) return '<td title="路由器 · 192.168.1.1（WAN ' + esc(ip) + '）">' +
+		'<span class="g-self">路由器</span></td>';
 	if (host && host !== ip) return '<td class="g-host" title="' + esc(ip) + '">' + esc(host) + '</td>';
 	if (ip) return '<td class="g-ip" title="' + esc(ip) + '">' + esc(ip) + '</td>';
 	return '<td class="g-dash">—</td>';
@@ -154,7 +157,7 @@ function cellDev(host, ip) {
 
 function classTag(c, desc) {
 	if (c === 'L') return '<span class="g-tag l">公网服务</span>';
-	if (c === 'P') return '<span class="g-tag p">未开放</span>';
+	if (c === 'P') return '<span class="g-tag p" title="未映射到内机">未落地</span>';
 	if (c === 'U') return '<span class="g-tag u" title="' + esc(desc || '') + '">UPnP' + (desc ? ' · ' + esc(desc) : '') + '</span>';
 	if (c === 'B') return '<span class="g-tag b">内机回连</span>';
 	if (c === 'N') return '<span class="g-tag n">已忽略</span>';
@@ -164,15 +167,15 @@ function classTag(c, desc) {
 function rowHTML(tab, x) {
 	if (tab === 'sources')
 		return '<tr><td class="g-ip" title="' + esc(x.ip) + '">' + esc(x.ip) + '</td>' +
-			cellGeo(x) + cellHost(x.host, '') +
+			cellGeo(x) + cellHost(x.host, x.dst) +
 			cellNum(x.total) + cellNum(x.tcp) + cellNum(x.udp) +
 			'<td class="num' + (x.watch ? ' g-watch' : ' g-num0') + '">' + x.watch + '</td>' +
 			'<td class="g-time">' + esc(x.last) + '</td></tr>';
 	if (tab === 'ports')
 		return '<tr>' + cellHost(x.host, x.dst) +
-			'<td class="g-ip" title="' + esc(x.dst) + '">' + esc(x.dst) + '</td>' +
 			cellNum(x.dport) +
 			'<td title="' + esc(x.desc || '') + '">' + classTag(x.class, x.desc) + '</td>' +
+			'<td class="g-proto">' + esc(x.proto) + '</td>' +
 			cellNum(x.srcs) + cellNum(x.count) +
 			'<td class="g-time">' + esc(x.last) + '</td></tr>';
 	if (tab === 'alerts') {
@@ -278,12 +281,15 @@ return view.extend({
 		]);
 
 		refs.tabs = E('div', { 'class': 'g-tabs' });
-		[['sources', '来源 IP'], ['ports', '端口落点'], ['alerts', '告警事件'], ['events', '最近连接']].forEach(function(p) {
-			refs.tabs.appendChild(E('div', {
+		[['sources', '来源 IP'], ['ports', '暴露面'], ['alerts', '告警事件'], ['events', '最近连接']].forEach(function(p) {
+			var attrs = {
 				'class': 'g-tab' + (p[0] === ST.tab ? ' on' : ''),
 				'data-tab': p[0],
 				'click': function() { switchTab(p[0]); }
-			}, p[1]));
+			};
+			if (p[0] === 'ports')
+				attrs.title = '公网服务与 UPnP 端口清单，含 24 小时无流量的端口';
+			refs.tabs.appendChild(E('div', attrs, p[1]));
 		});
 
 		refs.range = E('select', { 'change': function(ev) { ST.range = ev.target.value; ST.page = 1; loadList(); } }, [
@@ -295,9 +301,20 @@ return view.extend({
 			E('option', { 'value': 'tcp', 'selected': ST.proto === 'tcp' ? 'selected' : null }, '仅 TCP'),
 			E('option', { 'value': 'all', 'selected': ST.proto === 'all' ? 'selected' : null }, '全部协议')
 		]);
-		refs.only = E('select', { 'change': function(ev) { ST.only = ev.target.value; ST.page = 1; loadList(); } }, [
+		refs.only = E('select', {
+			title: '切到“含正常流量”会自动选择全部协议',
+			'change': function(ev) {
+				ST.only = ev.target.value;
+				if (ST.only === 'all') {
+					ST.proto = 'all';
+					refs.proto.value = 'all';
+				}
+				ST.page = 1;
+				loadList();
+			}
+		}, [
 			E('option', { 'value': 'watch', 'selected': ST.only === 'watch' ? 'selected' : null }, '只看关注'),
-			E('option', { 'value': 'all', 'selected': ST.only === 'all' ? 'selected' : null }, '全部流量')
+			E('option', { 'value': 'all', 'selected': ST.only === 'all' ? 'selected' : null }, '含正常流量')
 		]);
 		refs.rangeLabel = E('span', { 'class': 'muted' }, '范围');
 		refs.protoLabel = E('span', { 'class': 'muted' }, '协议');
@@ -366,7 +383,7 @@ return view.extend({
 			refs.tabs.querySelectorAll('.g-tab').forEach(function(el) {
 				el.classList.toggle('on', el.getAttribute('data-tab') === t);
 			});
-			// 端口落点/最近连接只有 24h 明细；告警不分协议 —— 用 display 直接收掉，别留空心位
+			// 暴露面/最近连接只有 24h 明细；告警不分协议 —— 用 display 直接收掉，别留空心位
 			show(refs.rangeLabel, t !== 'ports' && t !== 'events');
 			show(refs.range, t !== 'ports' && t !== 'events');
 			show(refs.protoLabel, t !== 'alerts');
@@ -405,9 +422,9 @@ return view.extend({
 				refs['c-ips'].textContent = s.src24 != null ? s.src24 : (s.ips24 || 0);
 				refs['c-ips-s'].textContent = 'TCP ' + (s.srctcp || 0) + ' · UDP ' + (s.srcudp || 0);
 				refs['c-watch'].textContent = s.watch24 || 0;
-				refs['c-watch-s'].textContent = '命中公网服务端口';
+				refs['c-watch-s'].textContent = '公网端口命中连接';
 				refs['c-alerts'].textContent = s.alerts24 || 0;
-				refs['c-alerts-s'].textContent = '仅统计公网端口与扫描';
+				refs['c-alerts-s'].textContent = '关注告警 · 公网/扫描';
 
 				var cover = '明细覆盖 ' + fmtSpan(s.span_m);
 				if (s.capped) cover += '（已封顶）';
@@ -431,13 +448,18 @@ return view.extend({
 				var rows = d.rows || [];
 				var n = COLS[ST.tab].length;
 				var empty = ST.only === 'watch'
-					? '暂无需要关注的访问，切到「全部流量」可查看正常 P2P/视频回连'
+					? '暂无需要关注的访问，切到「含正常流量」可查看正常 P2P/视频回连'
 					: '暂无数据';
 				refs.tbody.innerHTML = rows.length
 					? rows.map(function(x) { return rowHTML(ST.tab, x); }).join('')
 					: emptyRow(n, empty);
 				var pages = Math.max(1, Math.ceil(ST.total / ST.size));
-				refs.count.textContent = '共 ' + ST.total + ' 条';
+				var scope = [];
+				scope.push(ST.tab === 'ports' || ST.tab === 'events' ? '24h'
+					: ST.range === '7d' ? '7天' : ST.range === '30d' ? '30天' : '24h');
+				if (ST.tab !== 'alerts' && ST.proto === 'tcp') scope.push('仅TCP');
+				if (ST.only === 'watch') scope.push('关注');
+				refs.count.textContent = '共 ' + ST.total + ' 条 · ' + scope.join(' · ');
 				refs.pageinfo.textContent = '第 ' + ST.page + ' / ' + pages + ' 页';
 				refs.prev.disabled = ST.page <= 1;
 				refs.next.disabled = ST.page >= pages;

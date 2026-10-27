@@ -14,10 +14,13 @@
 
 function cls(dp, pr, dst,   k) {
 	if (dp in IG) return "N"
-	if (dp in EX) return "L"
 	k = toupper(pr) "|" dp
+	# 暴露端口只有落在 WAN 或路由器本机（.1）时才算公网服务；
+	# 落到内机的同号端口可能是 UPnP/回连/转发，继续往下判，避免把摄像头流量标成 lucky。
+	if ((dp in EX) && (dst == "" || dst == "-" || dst == "192.168.1.1" || dst !~ /^192\.168\./)) return "L"
 	if (k in UP) return "U"
 	if (dst != "" && dst != "-") return "B"
+	if (dp in EX) return "L"
 	return "P"
 }
 
