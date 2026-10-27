@@ -97,8 +97,10 @@ events)
 	rows=""
 	[ -n "$src" ] && rows=$(printf '%s\n' "$src" | awk -v p="$page" -v s="$size" '
 		NR > (p-1)*s && NR <= p*s {
+			# 第 6 列是 DNAT 后的落点；老数据只有 5 列、UNREPLIED 记的是 "-"，都当空处理
+			d = ($6 == "-" || $6 == "") ? "" : $6
 			if (n++) printf ","
-			printf "{\"t\":\"%s\",\"ip\":\"%s\",\"dport\":%d,\"proto\":\"%s\",\"exposed\":%d}", strftime("%m-%d %H:%M:%S", $1), $2, $3, $4, $5
+			printf "{\"t\":\"%s\",\"ip\":\"%s\",\"dport\":%d,\"proto\":\"%s\",\"exposed\":%d,\"dst\":\"%s\"}", strftime("%m-%d %H:%M:%S", $1), $2, $3, $4, $5, d
 		}')
 	printf '{"total":%d,"page":%d,"size":%d,"rows":[%s]}' "${total:-0}" "$page" "$size" "$rows"
 	;;

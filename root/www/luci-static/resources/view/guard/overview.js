@@ -2,53 +2,87 @@
 'require view';
 'require poll';
 
-var ST = { tab: 'sources', range: '24h', page: 1, size: 12, proto: 'tcp', total: 0 };
+var ST = { tab: 'sources', range: '24h', page: 1, size: 15, proto: 'tcp', total: 0 };
 
 var CSS = [
-'.guard{font-size:13px;color:#1f2430}',
-'.guard .g-head{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:0 0 6px}',
-'.guard .g-title{font-size:17px;font-weight:600;line-height:1.4;margin:0;padding:0;background:none;border:0;box-shadow:none;white-space:nowrap}',
-'.guard .g-meta{display:flex;align-items:center;flex-wrap:wrap;font-size:12.5px;color:#4b5563}',
-'.guard .g-mi{display:inline-flex;align-items:center;white-space:nowrap}',
-'.guard .g-mi + .g-mi::before{content:"·";color:#c3c8d2;margin:0 9px}',
-'.guard .g-stat{display:inline-flex;align-items:center;gap:5px;background:#e9f7ef;color:#1f7a4d;border-radius:999px;padding:1px 9px;font-size:12px;font-weight:500}',
-'.guard .g-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:#22a06b}',
-'.guard .g-dot.err{background:#d64545}',
-'.guard .g-stat.err{background:#fdecec;color:#c33333}',
-'.guard .g-exposed{max-width:420px;overflow:hidden;text-overflow:ellipsis}',
-'.guard .g-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px}',
-'.guard .g-card{background:#fff;border:1px solid #e6e8ec;border-radius:8px;padding:7px 14px}',
-'.guard .g-card .k{color:#7a8194;font-size:12px;line-height:1.6}',
-'.guard .g-card .v{font-size:20px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums;line-height:1.3}',
-'.guard .g-panel{background:#fff;border:1px solid #e6e8ec;border-radius:8px;overflow:hidden}',
-'.guard .g-tabs{display:flex;border-bottom:1px solid #e6e8ec;background:#fafbfc}',
-'.guard .g-tab{padding:8px 16px;cursor:pointer;font-size:13px;color:#7a8194;border-bottom:2px solid transparent}',
-'.guard .g-tab.on{color:#1f2430;border-bottom-color:#5e72e4;font-weight:600;background:#fff}',
-'.guard .g-bar{display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:1px solid #f0f1f4;height:38px}',
-'.guard .g-bar select{height:28px;line-height:1;font-size:12.5px;padding:0 8px;border:1px solid #e6e8ec;border-radius:6px;background:#fff;color:#1f2430;min-height:0}',
+'.guard{--line:#e9ecf2;--soft:#f2f4f8;--txt:#1f2430;--mute:#79808f;--main:#5e72e4;--navy:#33409c;--row:33px;--head:32px;--sh:0 1px 2px rgba(17,24,39,.04),0 2px 8px rgba(17,24,39,.04);display:flex;flex-direction:column;font-size:13px;line-height:1.5;color:var(--txt)}',
+// Argon 给 #view 的第一个 div 塞了 gap:.875rem，三块各多 14px。这里按同特异性覆盖掉。
+// #view 高度是 auto，height:100% 拉不动，所以直接把 #view 变成撑满视口的 flex 列，
+// 让面板吃掉剩余高度：矮屏不会把分页器顶出视口，数据少时也不会在底部留一大片灰。
+// 这里的高度只是兜底，实际值由 fitView() 按 header/footer 实测高度写入（见 render 末尾）。
+'#view{display:flex;flex-direction:column;height:calc(100vh - 115px)}',
+'#view > div.guard{flex:1 1 auto;min-height:0;gap:0}',
+// 和 OpenClash / Lucky 一致：内容从 header 底边直接起，第一张卡压住那条 32px 蓝色装饰带。
+// Argon 写的是 .main-right > #maincontent > .container（比我多一个 class），所以这里重复 class 提特异性。
+'#maincontent > .container.container{margin-bottom:0}',
+'.guard .g-hd{background:#fff;border:1px solid var(--line);border-radius:10px;padding:6px 16px 8px;margin:0 0 10px;flex:none;box-shadow:var(--sh)}',
+'.guard .g-hd-top{display:flex;align-items:center;gap:10px;min-width:0}',
+'.guard .g-title{font-size:19px;font-weight:600;letter-spacing:.01em;line-height:1.35;margin:0;padding:0;background:none;border:0;box-shadow:none;white-space:nowrap;color:var(--navy)}',
+'.guard .g-updated{font-size:12px;color:var(--mute);white-space:nowrap;flex:none;margin-left:auto}',
+'.guard .g-meta{display:flex;align-items:center;flex-wrap:wrap;gap:2px 12px;font-size:12.5px;color:var(--mute);margin:2px 0 0;min-height:19px}',
+'.guard .g-mi{display:inline-flex;align-items:center;white-space:nowrap;max-width:100%}',
+'.guard .g-exposed{overflow:hidden;text-overflow:ellipsis}',
+'.guard .g-pill{display:inline-flex;align-items:center;gap:5px;background:#e9f7ef;color:#1f7a4d;border-radius:999px;padding:1px 9px 1px 8px;font-size:12px;font-weight:500;white-space:nowrap;flex:none}',
+'.guard .g-pill.err{background:#fdecec;color:#c33333}',
+'.guard .g-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:#22a06b;flex:none;animation:g-pulse 2.4s ease-in-out infinite}',
+'@keyframes g-pulse{0%,100%{opacity:1}50%{opacity:.35}}',
+'.guard .g-dot.err{background:#d64545;animation:none}',
+'.guard .g-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;flex:none;margin:0 0 10px}',
+'.guard .g-card{position:relative;background:#fff;border:1px solid var(--line);border-radius:10px;padding:7px 14px 8px 17px;overflow:hidden;box-shadow:var(--sh)}',
+'.guard .g-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--ac,#5e72e4)}',
+'.guard .g-card .k{color:var(--mute);font-size:12px;line-height:1.5;letter-spacing:.01em}',
+'.guard .g-card .v{margin-top:1px;font-size:22px;font-weight:600;line-height:1.3;font-variant-numeric:tabular-nums;letter-spacing:-.01em}',
+'.guard .g-panel{background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden;flex:1 1 auto;min-height:0;display:flex;flex-direction:column;box-shadow:var(--sh)}',
+'.guard .g-tabs{display:flex;gap:2px;padding:3px 8px;border-bottom:1px solid var(--line);flex:none}',
+'.guard .g-tab{padding:3px 13px;border-radius:7px;cursor:pointer;font-size:13px;line-height:1.5;color:var(--mute);transition:background .15s,color .15s;-webkit-user-select:none;user-select:none}',
+'.guard .g-tab:hover{background:#f4f6fa;color:var(--txt)}',
+'.guard .g-tab.on{background:#eef1fe;color:#3f56d6;font-weight:600}',
+'.guard .g-bar{display:flex;align-items:center;gap:8px;padding:0 14px;height:36px;border-bottom:1px solid var(--soft);flex:none}',
+'.guard .g-bar select{height:26px;line-height:1;font-size:12.5px;padding:0 8px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--txt);min-height:0}',
 '.guard .g-bar .sp{flex:1}',
-'.guard .g-bar .muted{color:#7a8194;font-size:12.5px}',
-'.guard .g-tw{min-height:calc(12 * 40px + 34px)}',
-'.guard .g-table{width:100%;border-collapse:collapse;table-layout:fixed;background:none}',
-'.guard .g-table th,.guard .g-table td{padding:0 14px;border-bottom:1px solid #f0f1f4;text-align:left;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:none}',
-'.guard .g-table th{color:#7a8194;font-weight:500;font-size:12px;background:#fafbfc;height:34px}',
-'.guard .g-table td{height:40px}',
-'.guard .g-table tbody tr:nth-child(even) td{background:#fcfcfd}',
-'.guard .g-table tbody tr:hover td{background:#f4f7ff}',
-'.guard .g-table tr:last-child td{border-bottom:none}',
-'.guard .g-table .num{text-align:right;font-variant-numeric:tabular-nums}',
-'.guard .g-ip{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}',
-'.guard .g-tag{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;line-height:1.8}',
+'.guard .g-bar .muted{color:var(--mute);font-size:12.5px}',
+// 数据不足时下面留白，只由最后一条数据的下边框收尾，不再逐行画分隔线
+'.guard .g-tw{flex:1 1 auto;min-height:calc(8*var(--row) + var(--head));overflow:auto}',
+'.guard .g-table{width:100%;min-width:760px;margin:0;border:0;border-collapse:collapse;table-layout:fixed;background:none;box-shadow:none}',
+'.guard .g-table th,.guard .g-table td{padding:0 14px;border:0;border-bottom:1px solid var(--soft);text-align:left;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:none}',
+'.guard .g-table th{height:var(--head);font-size:12px;font-weight:600;letter-spacing:.02em;color:#6b7280;background:#f2f4f8;position:sticky;top:0;z-index:1}',
+'.guard .g-tw::-webkit-scrollbar{width:9px;height:9px}',
+'.guard .g-tw::-webkit-scrollbar-thumb{background:#d5dae4;border-radius:5px;border:2px solid #fff}',
+'.guard .g-tw::-webkit-scrollbar-thumb:hover{background:#c2c9d6}',
+'.guard .g-tw::-webkit-scrollbar-track{background:transparent}',
+'.guard .g-tw{scrollbar-width:thin;scrollbar-color:#d5dae4 transparent}',
+'.guard .g-table td{height:var(--row)}',
+'.guard .g-table tbody tr{background:#fff}',
+'.guard .g-table tbody tr:nth-child(even){background:#f7f8fb}',
+'.guard .g-table tbody tr:hover{background:#eef3ff}',
+'.guard .g-table tbody tr:last-child td{border-bottom:1px solid var(--soft)}',
+'.guard .g-table .num{text-align:center;font-variant-numeric:tabular-nums}',
+'.guard .g-num0{color:#b3bac6}',
+'.guard .g-time{color:var(--mute);font-variant-numeric:tabular-nums}',
+'.guard .g-ip{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;letter-spacing:-.01em}',
+'.guard .g-proto{color:var(--mute);font-size:12px;letter-spacing:.03em;text-transform:uppercase}',
+'.guard .g-ports{color:#5c6474;font-size:12.5px}',
+'.guard .g-tag{display:inline-block;padding:0 8px;border-radius:999px;font-size:11.5px;line-height:18px;font-weight:500}',
 '.guard .g-tag.scan{background:#fdecec;color:#d64545}',
-'.guard .g-tag.rate{background:#fdf3e3;color:#c97a12}',
-'.guard .g-ex{display:inline-block;padding:0 6px;border-radius:4px;background:#eaf1ff;color:#2f6fed;font-size:11.5px}',
-'.guard .g-pager{display:flex;align-items:center;gap:8px;padding:0 14px;border-top:1px solid #f0f1f4;height:36px;color:#7a8194;font-size:12.5px}',
+'.guard .g-tag.rate{background:#fdf3e3;color:#bf7212}',
+'.guard .g-ex{display:inline-block;padding:0 7px;border-radius:5px;background:#eaf1ff;color:#2f6fed;font-size:11.5px;line-height:18px;font-weight:500}',
+'.guard .g-dash{color:#ccd1db}',
+'.guard .g-self{color:#5c6474;font-size:12px}',
+'.guard .g-table td.g-empty{height:auto;padding:0}',
+'.guard .g-empty>div{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;height:180px;color:#a7aeba;font-size:13px}',
+'.guard .g-empty svg{opacity:.55}',
+'.guard .g-pager{display:flex;align-items:center;gap:8px;padding:0 14px;height:36px;border-top:1px solid var(--soft);color:var(--mute);font-size:12.5px;flex:none}',
 '.guard .g-pager .sp{flex:1}',
-'.guard .g-pager button{height:28px;line-height:1;font-size:12.5px;padding:0 12px;border:1px solid #e6e8ec;border-radius:6px;background:#fff;color:#1f2430;cursor:pointer;min-height:0}',
-'.guard .g-pager button:disabled{opacity:.45;cursor:default}',
-'.guard .g-empty{padding:28px;text-align:center;color:#7a8194}',
-'.guard .g-ports{color:#7a8194;font-size:12px}',
-'@media(max-width:720px){.guard .g-cards{grid-template-columns:repeat(2,1fr)}}'
+'.guard .g-pager .pg{color:#4b5563;font-variant-numeric:tabular-nums}',
+'.guard .g-pager button{height:26px;line-height:1;font-size:12.5px;padding:0 11px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--txt);cursor:pointer;min-height:0;transition:background .15s,border-color .15s,color .15s}',
+'.guard .g-pager button:hover:not(:disabled){border-color:#c3cbf0;background:#f6f8ff;color:#3f56d6}',
+'.guard .g-pager button:disabled{opacity:.4;cursor:default}',
+'.guard .g-empty-note{color:#9aa1ae}',
+'@media(max-height:880px){.guard{--row:31px}}',
+'@media(max-height:820px){.guard{--row:29px}}',
+'@media(max-width:1240px){.guard .g-table th,.guard .g-table td{padding:0 8px}}',
+'@media(max-width:900px){.guard .g-cards{grid-template-columns:repeat(2,1fr)}}',
+'@media(max-width:560px){.guard .g-updated{display:none}.guard .g-hd-top{flex-wrap:wrap}}'
 ].join('\n');
 
 function esc(s) {
@@ -62,62 +96,129 @@ function api(qs) {
 }
 
 var COLS = {
-	sources: [['来源 IP', 24, 0], ['连接数', 10, 1], ['TCP', 9, 1], ['UDP', 9, 1], ['端口数', 10, 1], ['端口', 30, 0], ['最近', 8, 0]],
-	alerts:  [['时间', 22, 0], ['类型', 12, 0], ['来源 IP', 28, 0], ['连接', 10, 1], ['端口', 28, 0]],
-	events:  [['时间', 22, 0], ['来源 IP', 28, 0], ['目标端口', 14, 1], ['协议', 12, 0], ['对外端口', 24, 0]]
+	sources: [['来源 IP', 24, 0], ['连接数', 7, 1], ['TCP', 6, 1], ['UDP', 6, 1], ['端口数', 7, 1], ['端口', 36, 0], ['最近', 14, 0]],
+	alerts:  [['时间', 19, 0], ['类型', 10, 0], ['来源 IP', 26, 0], ['连接', 6, 1], ['端口', 39, 0]],
+	events:  [['时间', 18, 0], ['来源 IP', 26, 0], ['目标 IP', 26, 0], ['目标端口', 10, 1], ['协议', 8, 0], ['对外端口', 12, 0]]
 };
+
+var EMPTY_ICON = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" ' +
+	'stroke-linecap="round"><path d="M3.5 6h17M3.5 12h17M3.5 18h17"/>' +
+	'<circle cx="7.5" cy="6" r="1.3" fill="currentColor" stroke="none"/>' +
+	'<circle cx="7.5" cy="12" r="1.3" fill="currentColor" stroke="none"/>' +
+	'<circle cx="7.5" cy="18" r="1.3" fill="currentColor" stroke="none"/></svg>';
+
+function emptyRow(cols, text) {
+	return '<tr><td class="g-empty" colspan="' + cols + '"><div>' + EMPTY_ICON +
+		'<span class="g-empty-note">' + esc(text) + '</span></div></td></tr>';
+}
+
+function cellNum(v) {
+	return '<td class="num' + (v ? '' : ' g-num0') + '">' + v + '</td>';
+}
+
+// 目标 IP = DNAT 之后的真实落点。落回路由器自己时写「本机」更好读，
+// 转发到内网设备（NAS 之类）时就直接显示那台机器的 IP。
+function cellDst(d) {
+	if (!d) return '<td class="g-dash">—</td>';
+	if (d === window.location.hostname) return '<td><span class="g-self">本机</span></td>';
+	return '<td class="g-ip" title="' + esc(d) + '">' + esc(d) + '</td>';
+}
 
 function rowHTML(tab, x) {
 	if (tab === 'sources')
-		return '<tr><td class="g-ip">' + esc(x.ip) + '</td><td class="num">' + x.total + '</td><td class="num">' + x.tcp + '</td>' +
-			'<td class="num">' + x.udp + '</td><td class="num">' + x.ports + '</td>' +
+		return '<tr><td class="g-ip" title="' + esc(x.ip) + '">' + esc(x.ip) + '</td>' +
+			cellNum(x.total) + cellNum(x.tcp) + cellNum(x.udp) + cellNum(x.ports) +
 			'<td class="g-ports" title="' + esc(x.portlist) + '">' + esc(x.portlist) + '</td>' +
-			'<td style="color:#7a8194">' + esc(x.last) + '</td></tr>';
+			'<td class="g-time">' + esc(x.last) + '</td></tr>';
 	if (tab === 'alerts') {
 		var t = x.type === 'PORT_SCAN' ? '<span class="g-tag scan">端口扫描</span>' :
 			x.type === 'HIGH_RATE' ? '<span class="g-tag rate">高频连接</span>' : esc(x.type);
-		return '<tr><td style="color:#7a8194">' + esc(x.t) + '</td><td>' + t + '</td>' +
-			'<td class="g-ip">' + esc(x.ip) + '</td><td class="num">' + x.count + '</td>' +
+		return '<tr><td class="g-time">' + esc(x.t) + '</td><td>' + t + '</td>' +
+			'<td class="g-ip" title="' + esc(x.ip) + '">' + esc(x.ip) + '</td>' + cellNum(x.count) +
 			'<td class="g-ports" title="' + esc(x.ports) + '">' + esc(x.ports) + '</td></tr>';
 	}
-	return '<tr><td style="color:#7a8194">' + esc(x.t) + '</td><td class="g-ip">' + esc(x.ip) + '</td>' +
-		'<td class="num">' + x.dport + '</td><td style="color:#7a8194">' + esc(x.proto) + '</td>' +
-		'<td>' + (x.exposed ? '<span class="g-ex">对外</span>' : '') + '</td></tr>';
+	return '<tr><td class="g-time">' + esc(x.t) + '</td>' +
+		'<td class="g-ip" title="' + esc(x.ip) + '">' + esc(x.ip) + '</td>' + cellDst(x.dst) +
+		cellNum(x.dport) +
+		'<td class="g-proto">' + esc(x.proto) + '</td>' +
+		'<td>' + (x.exposed ? '<span class="g-ex">对外</span>' : '<span class="g-dash">—</span>') + '</td></tr>';
+}
+
+// 对外端口：把连续端口合并成区间（55508 55509 -> 55508-55509），
+// 超过 MAX 段再折叠成 +N。原始列表由 dnsmasq 的 dport 排序输出，但可能重复/乱序，先规范化。
+var EXPOSED_MAX = 10;
+
+function aggPorts(s) {
+	var arr = String(s || '').replace(/[,\s]+/g, ' ').trim().split(' ')
+		.map(function(v) { return parseInt(v, 10); })
+		.filter(function(n) { return n > 0 && n < 65536; });
+	if (!arr.length) return [];
+
+	arr.sort(function(a, b) { return a - b; });
+
+	var uniq = [];
+	for (var i = 0; i < arr.length; i++)
+		if (!i || arr[i] !== arr[i - 1]) uniq.push(arr[i]);
+
+	var out = [], st = uniq[0], en = uniq[0];
+	for (var j = 1; j < uniq.length; j++) {
+		if (uniq[j] === en + 1) { en = uniq[j]; continue; }
+		out.push(st === en ? String(st) : st + '-' + en);
+		st = en = uniq[j];
+	}
+	out.push(st === en ? String(st) : st + '-' + en);
+	return out;
+}
+
+function fmtExposed(s) {
+	var segs = aggPorts(s);
+	if (!segs.length) return { text: '', title: '' };
+	return {
+		text: segs.length > EXPOSED_MAX
+			? segs.slice(0, EXPOSED_MAX).join(' ') + ' +' + (segs.length - EXPOSED_MAX)
+			: segs.join(' '),
+		title: segs.length > EXPOSED_MAX ? segs.join(' ') : ''
+	};
 }
 
 return view.extend({
 	render: function() {
 		var refs = {};
 
-		function mi() { return E('span', { 'class': 'g-mi' }); }
+		refs.stat = E('span', { 'class': 'g-pill' }, [
+			refs.dot = E('span', { 'class': 'g-dot' }),
+			refs.status = E('span', {}, '连接中…')
+		]);
 
-		refs.meta = E('div', { 'class': 'g-meta' }, [
-			refs.stat = E('span', { 'class': 'g-stat' }, [
-				refs.dot = E('span', { 'class': 'g-dot' }),
-				refs.status = E('span', {}, '连接中…')
+		refs.updated = E('span', { 'class': 'g-updated' }, '');
+
+		refs.wan = E('span', { 'class': 'g-mi' }, '');
+		refs.uptime = E('span', { 'class': 'g-mi' }, '');
+		refs.exposed = E('span', { 'class': 'g-mi g-exposed' }, '');
+
+		// 标题 + 状态 + 更新时间 + 环境信息，收进一张标准白卡里
+		var head = E('div', { 'class': 'g-hd' }, [
+			E('div', { 'class': 'g-hd-top' }, [
+				E('div', { 'class': 'g-title' }, '外部访问监控'),
+				refs.stat,
+				refs.updated
 			]),
-			refs.wan = mi(),
-			refs.uptime = mi(),
-			refs.updated = mi(),
-			refs.exposed = E('span', { 'class': 'g-mi g-exposed' })
+			E('div', { 'class': 'g-meta' }, [refs.wan, refs.uptime, refs.exposed])
 		]);
 
-		var head = E('div', { 'class': 'g-head' }, [
-			E('div', { 'class': 'g-title' }, '外部访问监控'),
-			refs.meta
-		]);
-
-		function card(k, id) {
+		function card(k, id, color) {
 			var v = E('div', { 'class': 'v' }, '–');
 			refs[id] = v;
-			return E('div', { 'class': 'g-card' }, [E('div', { 'class': 'k' }, k), v]);
+			return E('div', { 'class': 'g-card', 'style': '--ac:' + color }, [
+				E('div', { 'class': 'k' }, k), v
+			]);
 		}
 
 		var cards = E('div', { 'class': 'g-cards' }, [
-			card('24 小时连接数', 'c-conn'),
-			card('24 小时来源 IP', 'c-ips'),
-			card('当前活跃外部连接', 'c-active'),
-			card('24 小时告警', 'c-alerts')
+			card('24 小时连接数', 'c-conn', '#5e72e4'),
+			card('24 小时来源 IP', 'c-ips', '#11a5a0'),
+			card('当前活跃外部连接', 'c-active', '#8b5cf6'),
+			card('24 小时告警', 'c-alerts', '#e8833a')
 		]);
 
 		refs.tabs = E('div', { 'class': 'g-tabs' });
@@ -149,14 +250,17 @@ return view.extend({
 
 		refs.cols = E('colgroup', {});
 		refs.thead = E('thead', {});
-		refs.tbody = E('tbody', {}, [E('tr', {}, [E('td', { 'class': 'g-empty', 'colspan': 7 }, '加载中…')])]);
+		// 注意：E() 只把字符串当文本节点，HTML 必须走 innerHTML，
+		// 否则刷新瞬间会把 <tr><td> 源码直接显示出来。
+		refs.tbody = E('tbody', {});
+		refs.tbody.innerHTML = emptyRow(7, '加载中…');
 
 		var table = E('table', { 'class': 'g-table' }, [refs.cols, refs.thead, refs.tbody]);
 		var tableWrap = E('div', { 'class': 'g-tw' }, [table]);
 
 		refs.prev = E('button', { 'click': function() { if (ST.page > 1) { ST.page--; loadList(); } } }, '上一页');
 		refs.next = E('button', { 'click': function() { ST.page++; loadList(); } }, '下一页');
-		refs.pageinfo = E('span', {}, '–');
+		refs.pageinfo = E('span', { 'class': 'pg' }, '–');
 
 		var pager = E('div', { 'class': 'g-pager' }, [
 			refs.prev, refs.pageinfo, refs.next,
@@ -168,27 +272,44 @@ return view.extend({
 
 		var root = E('div', { 'class': 'guard' }, [E('style', {}, CSS), head, cards, panel]);
 
-		// Argon 在 header 下方还有一条 32px 高的蓝色装饰条（header::after），
-		// 而 #view 从 header 底部就开始，不补这段距离标题和状态行会压在蓝条上。
-		var hdr = document.querySelector('header');
-		if (hdr) {
-			var after = window.getComputedStyle(hdr, '::after');
-			if (after && after.content && after.content !== 'none') {
-				var extra = parseFloat(after.height) || 0;
-				if (after.position === 'absolute' && extra > 0)
-					root.style.paddingTop = extra + 'px';
+		// 页面高度 = 视口 − header − footer（Powered by LuCI 那句）。footer 一旦被顶出视口，
+		// 整页就会长出滚动条，所以 #view 必须按实测的 header/footer 高度收缩，不能写死。
+		function fitView() {
+			var view = document.getElementById('view');
+			if (!view || !view.contains(root)) return false;
+			var hdr = document.querySelector('header');
+			var ftr = document.querySelector('footer');
+			var pad = 0;
+			if (view.parentNode && view.parentNode !== document.body) {
+				var cs = window.getComputedStyle(view.parentNode);
+				pad = (parseFloat(cs.marginBottom) || 0) + (parseFloat(cs.paddingBottom) || 0);
 			}
+			var h = window.innerHeight
+				- (hdr ? hdr.offsetHeight : 0)
+				- (ftr ? ftr.offsetHeight : 0)
+				- pad
+				- 8;   // 页面底部留一点呼吸，否则 footer 会死死贴着面板
+			view.style.height = Math.max(300, Math.round(h)) + 'px';
+			return true;
 		}
+
+		function onResize() {
+			if (!fitView()) window.removeEventListener('resize', onResize);
+		}
+		window.addEventListener('resize', onResize);
+
+		function show(el, on) { el.style.display = on ? '' : 'none'; }
 
 		function switchTab(t) {
 			ST.tab = t; ST.page = 1;
 			refs.tabs.querySelectorAll('.g-tab').forEach(function(el) {
 				el.classList.toggle('on', el.getAttribute('data-tab') === t);
 			});
-			refs.rangeLabel.style.visibility = (t === 'events') ? 'hidden' : 'visible';
-			refs.range.style.visibility = (t === 'events') ? 'hidden' : 'visible';
-			refs.protoLabel.style.visibility = (t === 'alerts') ? 'hidden' : 'visible';
-			refs.proto.style.visibility = (t === 'alerts') ? 'hidden' : 'visible';
+			// 最近连接固定看 24 小时、告警不分协议 —— 用 display 直接收掉，别留空心位
+			show(refs.rangeLabel, t !== 'events');
+			show(refs.range, t !== 'events');
+			show(refs.protoLabel, t !== 'alerts');
+			show(refs.proto, t !== 'alerts');
 			loadList();
 		}
 
@@ -205,21 +326,22 @@ return view.extend({
 		function loadSummary() {
 			return api('view=summary').then(function(d) {
 				if (!d || d.error) throw new Error('no data');
-				refs.stat.className = 'g-stat';
+				refs.stat.className = 'g-pill';
 				refs.dot.className = 'g-dot';
 				refs.status.textContent = '采集中';
 				refs.wan.textContent = d.wan ? 'WAN ' + d.wan : '';
 				refs.uptime.textContent = '已运行 ' + Math.floor((d.uptime || 0) / 86400) + ' 天 ' +
 					Math.floor((d.uptime % 86400) / 3600) + ' 小时';
-				refs.updated.textContent = '更新于 ' + (d.human || '—');
-				refs.exposed.textContent = d.exposed ? '对外端口 ' + d.exposed.trim() : '';
-				refs.exposed.title = d.exposed || '';
+				refs.updated.textContent = d.human ? '更新于 ' + d.human : '';
+				var ex = fmtExposed(d.exposed);
+				refs.exposed.textContent = ex.text ? '对外端口 ' + ex.text : '';
+				refs.exposed.title = ex.title;
 				refs['c-conn'].textContent = d.stats.conn24;
 				refs['c-ips'].textContent = d.stats.ips24;
 				refs['c-active'].textContent = d.stats.active;
 				refs['c-alerts'].textContent = d.stats.alerts24;
 			}).catch(function() {
-				refs.stat.className = 'g-stat err';
+				refs.stat.className = 'g-pill err';
 				refs.dot.className = 'g-dot err';
 				refs.status.textContent = '采集器未运行';
 			});
@@ -232,21 +354,22 @@ return view.extend({
 			return api(qs).then(function(d) {
 				ST.total = d.total || 0;
 				var rows = d.rows || [];
+				var n = COLS[ST.tab].length;
 				refs.tbody.innerHTML = rows.length
 					? rows.map(function(x) { return rowHTML(ST.tab, x); }).join('')
-					: '<tr><td class="g-empty" colspan="' + COLS[ST.tab].length + '">暂无数据</td></tr>';
+					: emptyRow(n, '暂无数据');
 				var pages = Math.max(1, Math.ceil(ST.total / ST.size));
 				refs.count.textContent = '共 ' + ST.total + ' 条';
 				refs.pageinfo.textContent = '第 ' + ST.page + ' / ' + pages + ' 页';
 				refs.prev.disabled = ST.page <= 1;
 				refs.next.disabled = ST.page >= pages;
 			}).catch(function() {
-				refs.tbody.innerHTML = '<tr><td class="g-empty" colspan="' + COLS[ST.tab].length + '">读取失败</td></tr>';
+				refs.tbody.innerHTML = emptyRow(COLS[ST.tab].length, '读取失败');
 			});
 		}
 
 		// 初始加载 + 轮询（切走页面由 poll 自动停）
-		window.setTimeout(function() { loadSummary(); loadList(); }, 0);
+		window.setTimeout(function() { fitView(); loadSummary(); loadList(); }, 0);
 		poll.add(function() { return loadSummary(); }, 5);
 		poll.add(function() { return loadList(); }, 15);
 

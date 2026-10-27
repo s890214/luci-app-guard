@@ -114,27 +114,34 @@ while :; do
 	fi
 
 	if [ -n "$wan" ]; then
+		# 取原始方向(src/dst/sport/dport) + 回复方向的 src，即 DNAT 之后的真实落点。
+		# 落在路由器自己身上时它等于 LAN 地址；转发到内网设备时就是那台设备的 IP。
+		# UNREPLIED 的连接没有回复方向，用 "-" 占位。
 		awk -v wan="$wan" '
-			{ src=""; dst=""; sp=""; dp=""; pr=$3
+			{ src=""; dst=""; sp=""; dp=""; rsrc=""; nsrc=0; pr=$3
 			  for (i=1; i<=NF; i++) {
-			    if (src=="" && $i ~ /^src=/)        { split($i,a,"="); src=a[2] }
+			    if ($i ~ /^src=/) {
+			      nsrc++; split($i,a,"=")
+			      if (nsrc==1) { if (src=="") src=a[2] }
+			      else if (nsrc==2 && rsrc=="") rsrc=a[2]
+			    }
 			    else if (dst=="" && $i ~ /^dst=/)   { split($i,b,"="); dst=b[2] }
 			    else if (sp==""  && $i ~ /^sport=/) { split($i,c,"="); sp=c[2] }
 			    else if (dp==""  && $i ~ /^dport=/) { split($i,d,"="); dp=d[2] }
 			  }
-			  if (dst==wan && src!="" && dp!="") print src, sp, dp, pr
+			  if (dst==wan && src!="" && dp!="") print src, sp, dp, pr, (rsrc==""?"-":rsrc)
 			}' "$CTFILE" 2>/dev/null \
 		| awk '$1 !~ /^(10\.|127\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)/' > "$DIR/ext.txt"
 
 		awk -v now="$now" -v exposed="$(cat "$DIR/exposed.txt")" '
 			BEGIN { n=split(exposed,e," "); for (i=1;i<=n;i++) ex[e[i]]=1 }
 			FILENAME==ARGV[1] { seen[$2]=1; next }
-			{ k=$1"|"$2"|"$3; if (!(k in seen)) printf "%d %s %s %s %s %d\n", now, $1, $2, $3, $4, ($3 in ex) }
+			{ k=$1"|"$2"|"$3; if (!(k in seen)) printf "%d %s %s %s %s %d %s\n", now, $1, $2, $3, $4, ($3 in ex), $5 }
 		' "$DIR/seen.ts" "$DIR/ext.txt" > "$DIR/new.txt"
 
 		if [ -s "$DIR/new.txt" ]; then
-			awk '{print $1, $2, $4, $5, $6}' "$DIR/new.txt" >> "$DIR/conn.log"
-			awk '{print $1, $2, $4, $5, $6}' "$DIR/new.txt" >> "$DIR/day.log"
+			awk '{print $1, $2, $4, $5, $6, $7}' "$DIR/new.txt" >> "$DIR/conn.log"
+			awk '{print $1, $2, $4, $5, $6, $7}' "$DIR/new.txt" >> "$DIR/day.log"
 			awk '{print $1, $2"|"$3"|"$4}' "$DIR/new.txt" >> "$DIR/seen.ts"
 		fi
 
