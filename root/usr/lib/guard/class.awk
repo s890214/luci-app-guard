@@ -12,19 +12,29 @@
 #   U = UPnP 映射端口（内机软件自己开的入站口）
 # 其余（P2P/fullcone 回连、被防火墙拒绝的探测、忽略名单）一律丢弃，不落盘。
 
-function cls(dp, pr, dst,   k, t) {
+function cls(dp, pr, dst,   k, t, u) {
 	if (dp in IG) return "N"
 	k = toupper(pr) "|" dp
+
+	# UPnP 优先：同一端口同时有 lucky 规则时，按回复落点区分 U/L
+	if (k in UP) {
+		u = UPIP[k]
+		if (dst == "" || dst == "-" || dst == u) return "U"
+	}
 
 	# 公网服务：目标必须是 WAN/路由器本机，或回复方向确实落在映射的内机。
 	if (k in LMAP) {
 		t = LMAP[k]
-		if (t == "" || t == LANIP) return "L"
-		if (dst == "" || dst == "-" || dst == t) return "L"
-		# 同号端口但落到别的内机：不是这条映射，继续按 UPnP/回连判
+		if (t == "") return "L"
+		if (t == LANIP) {
+			# 路由器本机端口：回复来自别的内机时不是这条 lucky 映射
+			if (dst == "" || dst == "-" || dst == LANIP || dst !~ /^192\.168\./) return "L"
+		} else if (dst == "" || dst == "-" || dst == t) {
+			return "L"
+		}
+		# 同号端口但落到别的内机：不是这条映射，继续按回连判
 	}
 
-	if (k in UP) return "U"
 	if (dst ~ /^192\.168\./ && dst != LANIP) return "B"
 	return "P"
 }
