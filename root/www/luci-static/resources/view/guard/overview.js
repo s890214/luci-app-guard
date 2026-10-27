@@ -2,7 +2,7 @@
 'require view';
 'require poll';
 
-var ST = { tab: 'sources', range: '24h', page: 1, size: 15, proto: 'all', only: 'watch', total: 0 };
+var ST = { tab: 'sources', range: '24h', page: 1, size: 15, proto: 'all', only: 'watch', total: 0, lan: '192.168.1.1' };
 
 var CSS = [
 '.guard{--line:#e9ecf2;--soft:#f2f4f8;--txt:#1f2430;--mute:#79808f;--main:#5e72e4;--navy:#33409c;--row:33px;--head:32px;--sh:0 1px 2px rgba(17,24,39,.04),0 2px 8px rgba(17,24,39,.04);display:flex;flex-direction:column;font-size:13px;line-height:1.5;color:var(--txt)}',
@@ -70,10 +70,7 @@ var CSS = [
 '.guard .g-tag.scan{background:#fdecec;color:#d64545}',
 '.guard .g-tag.rate{background:#fdf3e3;color:#bf7212}',
 '.guard .g-tag.l{background:#fdecec;color:#c33333}',
-'.guard .g-tag.p{background:#fdf3e3;color:#b45309}',
 '.guard .g-tag.u{background:#eef2ff;color:#4f5bd5}',
-'.guard .g-tag.b{background:#f1f3f6;color:#64748b}',
-'.guard .g-tag.n{background:#f1f3f6;color:#94a3b8}',
 '.guard .g-dash{color:#ccd1db}',
 '.guard .g-self{color:#5c6474;font-size:12px}',
 '.guard .g-table td.g-empty{height:auto;padding:0}',
@@ -148,7 +145,9 @@ function cellHost(host, ip) {
 
 // 事件流的落点：路由器自身统一显示“路由器”，悬浮带上 LAN/WAN 地址
 function cellDev(host, ip) {
-	if (ip && ip === ST.wan) return '<td title="路由器 · 192.168.1.1（WAN ' + esc(ip) + '）">' +
+	if (ip && ip === ST.wan) return '<td title="路由器 · ' + esc(ST.lan) + '（WAN ' + esc(ip) + '）">' +
+		'<span class="g-self">路由器</span></td>';
+	if (ip && ip === ST.lan) return '<td title="路由器 · ' + esc(ST.lan) + '">' +
 		'<span class="g-self">路由器</span></td>';
 	if (host && host !== ip) return '<td class="g-host" title="' + esc(ip) + '">' + esc(host) + '</td>';
 	if (ip) return '<td class="g-ip" title="' + esc(ip) + '">' + esc(ip) + '</td>';
@@ -157,20 +156,19 @@ function cellDev(host, ip) {
 
 function classTag(c, desc) {
 	if (c === 'L') return '<span class="g-tag l">公网服务</span>';
-	if (c === 'P') return '<span class="g-tag p" title="未映射到内机">未落地</span>';
 	if (c === 'U') return '<span class="g-tag u" title="' + esc(desc || '') + '">UPnP' + (desc ? ' · ' + esc(desc) : '') + '</span>';
-	if (c === 'B') return '<span class="g-tag b">内机回连</span>';
-	if (c === 'N') return '<span class="g-tag n">已忽略</span>';
 	return '<span class="g-dash">—</span>';
 }
 
 function rowHTML(tab, x) {
-	if (tab === 'sources')
+	if (tab === 'sources') {
+		var pt = x.portlist ? ' title="命中端口：' + esc(x.portlist) + '"' : '';
 		return '<tr><td class="g-ip" title="' + esc(x.ip) + '">' + esc(x.ip) + '</td>' +
 			cellGeo(x) + cellHost(x.host, x.dst) +
 			cellNum(x.total) + cellNum(x.tcp) + cellNum(x.udp) +
-			'<td class="num' + (x.watch ? ' g-watch' : ' g-num0') + '">' + x.watch + '</td>' +
+			'<td class="num' + (x.watch ? ' g-watch' : ' g-num0') + '"' + pt + '>' + x.watch + '</td>' +
 			'<td class="g-time">' + esc(x.last) + '</td></tr>';
+	}
 	if (tab === 'ports')
 		return '<tr>' + cellHost(x.host, x.dst) +
 			cellNum(x.dport) +
@@ -405,10 +403,18 @@ return view.extend({
 			return api('view=summary').then(function(d) {
 				if (!d || d.error) throw new Error('no data');
 				var s = d.stats || {};
-				refs.stat.className = 'g-pill';
-				refs.dot.className = 'g-dot';
-				refs.status.textContent = '采集中';
+				var age = d.ts ? Math.floor(Date.now() / 1000) - d.ts : 0;
 				ST.wan = d.wan || '';
+				ST.lan = d.lan || ST.lan;
+				if (age > 180) {
+					refs.stat.className = 'g-pill err';
+					refs.dot.className = 'g-dot err';
+					refs.status.textContent = '数据已过期 ' + Math.floor(age / 60) + ' 分钟';
+				} else {
+					refs.stat.className = 'g-pill';
+					refs.dot.className = 'g-dot';
+					refs.status.textContent = '采集中';
+				}
 				refs.wan.textContent = d.wan ? 'WAN ' + d.wan : '';
 				refs.uptime.textContent = '已运行 ' + Math.floor((d.uptime || 0) / 86400) + ' 天 ' +
 					Math.floor((d.uptime % 86400) / 3600) + ' 小时';
@@ -448,7 +454,7 @@ return view.extend({
 				var rows = d.rows || [];
 				var n = COLS[ST.tab].length;
 				var empty = ST.only === 'watch'
-					? '暂无需要关注的访问，切到「含正常流量」可查看正常 P2P/视频回连'
+					? '暂无需要关注的访问，切到「含正常流量」可查看 UPnP 记录'
 					: '暂无数据';
 				refs.tbody.innerHTML = rows.length
 					? rows.map(function(x) { return rowHTML(ST.tab, x); }).join('')
@@ -469,9 +475,10 @@ return view.extend({
 		}
 
 		// 初始加载 + 轮询（切走页面由 poll 自动停）
+		// state/聚合都是 60 秒更新，30/60 秒足够，避免用 5/15 秒空转路由器 CGI。
 		window.setTimeout(function() { fitView(); loadSummary(); loadList(); }, 0);
-		poll.add(function() { return loadSummary(); }, 5);
-		poll.add(function() { return loadList(); }, 15);
+		poll.add(function() { return loadSummary(); }, 30);
+		poll.add(function() { return loadList(); }, 60);
 
 		return root;
 	},

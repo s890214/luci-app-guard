@@ -2,6 +2,7 @@
 # luci-app-guard 数据接口
 # view=summary|sources|ports|alerts|events
 # range=24h|7d|30d  page=N  size=N  proto=tcp|all  only=watch|all
+# 只返回 L（公网服务/端口转发）与 U（UPnP）两类；P2P/被拒绝探测不入库。
 
 DIR=${GUARD_DIR:-/tmp/guard}
 DATA=${GUARD_DATA:-/etc/guard}
@@ -36,12 +37,13 @@ case "$range" in
 esac
 
 # 24h 来源：统一成 ip total tcp udp ports portlist last watch topdst
+# ips.tsv: ip total tcp udp ports portlist first last l24 l60 sc60 sclist lplist topdst topdst_n
 sources_24h() {
-	[ -s "$DIR/ips.tsv" ] && awk -F'\t' '{ print $1 "\t" $2 "\t" $9 "\t" $10 "\t" $5 "\t" $8 "\t" $4 "\t" $11 "\t" $15 }' "$DIR/ips.tsv"
+	[ -s "$DIR/ips.tsv" ] && awk -F'\t' '{ print $1 "\t" $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6 "\t" $8 "\t" $9 "\t" $14 }' "$DIR/ips.tsv"
 }
 
 # 7/30 天来源：按 IP 合并每日汇总，watch = 端口清单命中公网端口
-# 每日汇总第 8/9 列是主要落点与该落点连接数；多天按落点连接数累加后取最大。
+# 每日汇总：ip tcp udp ports portlist first last topdst topdst_n
 sources_range() {
 	cut=$(date -d "@$((now - days * 86400))" +%F)
 	{
@@ -52,13 +54,13 @@ sources_range() {
 			[ "$b" \< "$cut" ] && continue
 			cat "$f"
 		done
-		[ -s "$DIR/today.tsv" ] && awk -F'	' '{ print $1 "	" $9 "	" $10 "	" $5 "	" $8 "	" $3 "	" $4 "	" $15 "	" $19 }' "$DIR/today.tsv"
-	} | awk -F'	' -v MAPDIR="$DIR" "$(cat "$LIB")"'
+		[ -s "$DIR/today.tsv" ] && awk -F'\t' '{ print $1 "\t" $3 "\t" $4 "\t" $5 "\t" $6 "\t" $7 "\t" $8 "\t" $14 "\t" $15 }' "$DIR/today.tsv"
+	} | awk -F'\t' -v MAPDIR="$DIR" "$(cat "$LIB")"'
 		BEGIN {
 			# 旧日汇总没有落点列，用当前 24h 的同一 IP 落点兜底
 			while ((getline l < (MAPDIR "/ips.tsv")) > 0) {
-				split(l, a, "	")
-				if (a[1] != "" && a[15] != "") CURDST[a[1]] = a[15]
+				split(l, a, "\t")
+				if (a[1] != "" && a[14] != "") CURDST[a[1]] = a[14]
 			}
 		}
 		{
@@ -88,7 +90,7 @@ sources_range() {
 					}
 				}
 				if (best == "") best = CURDST[ip]
-				printf "%s	%d	%d	%d	%d	%s	%d	%d	%s\n", ip, tcp[ip] + udp[ip], tcp[ip], udp[ip], ports[ip], pl[ip], last[ip], w, best
+				printf "%s\t%d\t%d\t%d\t%d\t%s\t%d\t%d\t%s\n", ip, tcp[ip] + udp[ip], tcp[ip], udp[ip], ports[ip], pl[ip], last[ip], w, best
 			}
 		}'
 }
@@ -139,7 +141,7 @@ ports)
 		function j(s) { gsub(/["\\\t\r\n]/, " ", s); return s }
 		{
 			p = $1; c = $2; cnt = $3; sc = $4; last = $5; dst = $6; dp = $7; pr = $8; desc = $9
-			if (ONLY == "watch" && c != "L" && c != "P") next
+			if (ONLY == "watch" && c != "L") next
 			if (PROTO != "all" && pr != PROTO) next
 			rn++
 			if (rn > (PAGE - 1) * SIZE && rn <= PAGE * SIZE) {
@@ -185,13 +187,13 @@ alerts)
 
 events)
 	tmp=$DIR/.events.$$
-	awk -v MAPDIR="$DIR" -v ONLY="$only" -v PROTO="$proto" -v NOW="$now" "$(cat "$LIB")"'
+	# conn.log: ts src dport proto exposed class rsrc
+	awk -v ONLY="$only" -v PROTO="$proto" -v NOW="$now" '
 		{
 			if (PROTO != "all" && $4 != PROTO) next
 			if ($1 + 0 < NOW - 86400) next
-			c = cls($3, $4, $6)
-			if (ONLY == "watch" && c != "L" && c != "P") next
-			print $0 "\t" c
+			if (ONLY == "watch" && $6 != "L") next
+			print
 		}' "$DIR/conn.log" | sort -k1 -nr > "$tmp"
 	total=$(wc -l < "$tmp")
 	rows=$(awk -v PAGE="$page" -v SIZE="$size" -v MAPDIR="$DIR" '
@@ -205,10 +207,10 @@ events)
 			}
 		}
 		NR > (PAGE - 1) * SIZE && NR <= PAGE * SIZE {
-			d = ($6 == "-" || $6 == "") ? "" : $6
+			d = ($7 == "-" || $7 == "") ? "" : $7
 			if (json != "") json = json ","
 			json = json sprintf("{\"t\":\"%s\",\"ip\":\"%s\",\"dport\":%d,\"proto\":\"%s\",\"exposed\":%d,\"dst\":\"%s\",\"class\":\"%s\",\"host\":\"%s\",\"country\":\"%s\",\"region\":\"%s\",\"isp\":\"%s\"}",
-				strftime("%m-%d %H:%M:%S", $1), j($2), $3, $4, $5, j(d), $7, j(H[d]), j(C[$2]), j(R[$2]), j(I[$2]))
+				strftime("%m-%d %H:%M:%S", $1), j($2), $3, $4, $5, j(d), $6, j(H[d]), j(C[$2]), j(R[$2]), j(I[$2]))
 		}
 		END { printf "%s", json }' "$tmp")
 	rm -f "$tmp"

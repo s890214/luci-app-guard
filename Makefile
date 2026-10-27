@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-guard
-PKG_VERSION:=1.1.2
+PKG_VERSION:=2.0.0
 PKG_RELEASE:=1
 PKG_LICENSE:=MIT
 PKG_MAINTAINER:=s890214
@@ -18,9 +18,11 @@ define Package/luci-app-guard
 endef
 
 define Package/luci-app-guard/description
-  Lightweight inbound-connection monitor for OpenWrt. Samples conntrack,
-  records external sources, writes scan/rate alerts, keeps 30 days of daily
-  aggregates. Read-only: never blocks traffic.
+  Lightweight exposed-service monitor for OpenWrt. Samples conntrack and
+  records only inbound connections to exposed services (lucky/dstnat/firewall
+  rules) and UPnP mappings. P2P/fullcone callbacks and rejected probes are
+  deliberately dropped. Keeps 24h detail in RAM and 30 days of daily
+  aggregates on flash. Read-only: never blocks traffic.
 endef
 
 define Build/Compile
@@ -29,7 +31,7 @@ endef
 define Package/luci-app-guard/install
 	$(INSTALL_DIR) $(1)/etc/config $(1)/etc/init.d $(1)/etc/guard/daily
 	$(INSTALL_DIR) $(1)/usr/lib/guard
-	$(INSTALL_DIR) $(1)/www/guard $(1)/www/cgi-bin
+	$(INSTALL_DIR) $(1)/www/cgi-bin
 	$(INSTALL_DIR) $(1)/www/luci-static/resources/view/guard
 	$(INSTALL_DIR) $(1)/usr/share/luci/menu.d
 	$(INSTALL_CONF) ./root/etc/config/guard $(1)/etc/config/guard
@@ -37,7 +39,6 @@ define Package/luci-app-guard/install
 	$(INSTALL_BIN) ./root/etc/guard/guard.sh $(1)/etc/guard/guard.sh
 	$(INSTALL_DATA) ./root/usr/lib/guard/class.awk $(1)/usr/lib/guard/class.awk
 	$(INSTALL_BIN) ./root/www/cgi-bin/guard $(1)/www/cgi-bin/guard
-	$(INSTALL_DATA) ./root/www/guard/index.html $(1)/www/guard/index.html
 	$(INSTALL_DATA) ./root/www/luci-static/resources/view/guard/overview.js $(1)/www/luci-static/resources/view/guard/overview.js
 	$(INSTALL_DATA) ./root/usr/share/luci/menu.d/luci-app-guard.json $(1)/usr/share/luci/menu.d/luci-app-guard.json
 endef
