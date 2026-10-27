@@ -248,19 +248,23 @@ write_daily() {
 		END {
 			for (ip in base) {
 				if (ip in cur) continue
-				split(base[ip], x, "\t")
-				printf "%s\t%d\t%d\t%d\t%s\t%d\t%d", ip, x[2] + 0, x[3] + 0, x[4] + 0, x[5], x[6] + 0, x[7] + 0
-				if (x[8] != "" && x[8] != "-") printf "\t%s\t%d", x[8], x[9] + 0
-				printf "\n"
+				split(base[ip], x, "	")
+				printf "%s	%d	%d	%d	%s	%d	%d", ip, x[2] + 0, x[3] + 0, x[4] + 0, x[5], x[6] + 0, x[7] + 0
+				if (x[8] != "" && x[8] != "-") printf "	%s	%d", x[8], x[9] + 0
+				else printf "		0"
+				if (x[10] != "") printf "	%d\n", x[10] + 0
+				else printf "	\n"
 			}
 			for (ip in cur) {
-				split(cur[ip], c, "\t")
+				split(cur[ip], c, "	")
 				tcp = c[3] + 0; udp = c[4] + 0
+				l = c[9] + 0
 				pl = c[6]; first = c[7] + 0; last = c[8] + 0
 				dst = c[14]; dn = c[15] + 0
 				if (ip in base) {
-					split(base[ip], x, "\t")
+					split(base[ip], x, "	")
 					tcp += x[2]; udp += x[3]
+					l += x[10] + 0
 					n = split(x[5], xp, ",")
 					for (i = 1; i <= n; i++)
 						if (xp[i] != "" && index("," pl ",", "," xp[i] ",") == 0)
@@ -271,7 +275,7 @@ write_daily() {
 				}
 				n = split(pl, pp, ","); ports = 0
 				for (i = 1; i <= n; i++) if (pp[i] != "") ports++
-				printf "%s\t%d\t%d\t%d\t%s\t%d\t%d\t%s\t%d\n", ip, tcp, udp, ports, pl, first, last, dst, dn
+				printf "%s	%d	%d	%d	%s	%d	%d	%s	%d	%d\n", ip, tcp, udp, ports, pl, first, last, dst, dn, l
 			}
 		}' "$DIR/baseline.tsv" "$DIR/today.tsv" > "$DAILY/$1.tsv.tmp"
 		if cmp -s "$DAILY/$1.tsv.tmp" "$DAILY/$1.tsv"; then

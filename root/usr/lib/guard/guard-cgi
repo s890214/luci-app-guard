@@ -38,8 +38,8 @@ sources_24h() {
 	[ -s "$DIR/ips.tsv" ] && awk -F'\t' '{ print $1 "\t" $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6 "\t" $8 "\t" $9 "\t" $14 }' "$DIR/ips.tsv"
 }
 
-# 7/30 天来源：按 IP 合并每日汇总，watch = 端口清单命中公网端口
-# 每日汇总：ip tcp udp ports portlist first last topdst topdst_n
+# 7/30 天来源：按 IP 合并每日汇总；watch 与 24h 一样是 L 连接数
+# 每日汇总：ip tcp udp ports portlist first last topdst topdst_n l
 sources_range() {
 	cut=$(date -d "@$((now - days * 86400))" +%F)
 	{
@@ -50,17 +50,18 @@ sources_range() {
 			[ "$b" \< "$cut" ] && continue
 			cat "$f"
 		done
-		[ -s "$DIR/today.tsv" ] && awk -F'\t' '{ print $1 "\t" $3 "\t" $4 "\t" $5 "\t" $6 "\t" $7 "\t" $8 "\t" $14 "\t" $15 }' "$DIR/today.tsv"
-	} | awk -F'\t' -v MAPDIR="$DIR" "$(cat "$LIB")"'
+		[ -s "$DIR/today.tsv" ] && awk -F'	' '{ print $1 "	" $3 "	" $4 "	" $5 "	" $6 "	" $7 "	" $8 "	" $14 "	" $15 "	" $9 }' "$DIR/today.tsv"
+	} | awk -F'	' -v MAPDIR="$DIR" "$(cat "$LIB")"'
 		BEGIN {
 			# 旧日汇总没有落点列，用当前 24h 的同一 IP 落点兜底
 			while ((getline l < (MAPDIR "/ips.tsv")) > 0) {
-				split(l, a, "\t")
+				split(l, a, "	")
 				if (a[1] != "" && a[14] != "") CURDST[a[1]] = a[14]
 			}
 		}
 		{
-			ip = $1; tcp[ip] += $2; udp[ip] += $3; ports[ip] += $4
+			ip = $1; tcp[ip] += $2; udp[ip] += $3
+			if ($10 != "") { lc[ip] += $10 + 0; hasl[ip] = 1 }
 			if (!(ip in first) || $6 + 0 < first[ip]) first[ip] = $6 + 0
 			if ($7 + 0 > last[ip]) last[ip] = $7 + 0
 			n = split($5, p, ",")
@@ -75,8 +76,15 @@ sources_range() {
 		}
 		END {
 			for (ip in tcp) {
-				w = 0; n = split(pl[ip], p, ",")
-				for (i = 1; i <= n; i++) if (p[i] in EX) { w = 1; break }
+				# 与 24h 同口径：watch = L 连接数；旧日汇总没有第 10 列时才退回 0/1
+				w = 0
+				if (hasl[ip]) w = lc[ip]
+				else {
+					n = split(pl[ip], p, ",")
+					for (i = 1; i <= n; i++) if (p[i] in EX) { w = 1; break }
+				}
+				pc = 0; n = split(pl[ip], p, ",")
+				for (i = 1; i <= n; i++) if (p[i] != "") pc++
 				best = ""
 				if (dlist[ip] != "") {
 					bestn = -1; n = split(dlist[ip], ds, SUBSEP)
@@ -86,7 +94,7 @@ sources_range() {
 					}
 				}
 				if (best == "") best = CURDST[ip]
-				printf "%s\t%d\t%d\t%d\t%d\t%s\t%d\t%d\t%s\n", ip, tcp[ip] + udp[ip], tcp[ip], udp[ip], ports[ip], pl[ip], last[ip], w, best
+				printf "%s	%d	%d	%d	%d	%s	%d	%d	%s\n", ip, tcp[ip] + udp[ip], tcp[ip], udp[ip], pc, pl[ip], last[ip], w, best
 			}
 		}'
 }
@@ -98,13 +106,22 @@ summary)
 
 sources)
 	[ "$days" -le 1 ] && src=$(sources_24h) || src=$(sources_range)
-	printf '%s\n' "$src" | awk -F'\t' -v MAPDIR="$DIR" \
+	# 三档统一排序：公网命中降序 -> 连接数降序 -> 最近时间降序 -> IP 升序
+	# 用定宽复合键 + sort -r，避开 BusyBox sort 不稳定的多键排序
+	printf '%s\n' "$src" | awk -F'	' '
+		function ipkey(s, a) {
+			split(s, a, ".")
+			return sprintf("%03d%03d%03d%03d", 255 - (a[1] + 0), 255 - (a[2] + 0), 255 - (a[3] + 0), 255 - (a[4] + 0))
+		}
+		NF >= 8 {
+			printf "%06d%09d%010d%s	%s\n", $8 + 0, $2 + 0, $7 + 0, ipkey($1), $0
+		}' | sort -r | cut -f2- | awk -F'	' -v MAPDIR="$DIR" \
 		-v ONLY="$only" -v PROTO="$proto" -v PAGE="$page" -v SIZE="$size" \
 		-v ALERTS="$ALERTS" -v NOW="$now" -v DAYS="$days" "$(cat "$LIB")"'
-		function j(s) { gsub(/["\\\t\r\n]/, " ", s); return s }
+		function j(s) { gsub(/["\\	\r\n]/, " ", s); return s }
 		BEGIN {
 			while ((getline l < (MAPDIR "/geo.tsv")) > 0) {
-				split(l, a, "\t"); C[a[1]] = a[2]; R[a[1]] = a[3]; I[a[1]] = a[4]
+				split(l, a, "	"); C[a[1]] = a[2]; R[a[1]] = a[3]; I[a[1]] = a[4]
 			}
 			while ((getline l < ALERTS) > 0) {
 				split(l, a, "|")

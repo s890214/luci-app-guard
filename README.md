@@ -74,7 +74,7 @@ ssh root@192.168.1.1 'sh /tmp/luci-app-guard/install.sh'
 | 告警记录（单文件） | `/etc/guard/alerts.tsv` | `alert_keep` 条 |
 | 归属地缓存 | `/tmp/guard/geo.tsv` | 7 天 |
 
-24h 明细每小时快照一次；`ips.tsv`/`ports.tsv`/`today.tsv` 不落盘，重启后由 `conn.log` 首轮聚合重建，避免同一份数据存多份。每日汇总每小时刷新一次，跨天时定稿；重启后自动读取当天已有汇总作为基线继续累计。明细达到 `conn_keep` 上限时页面显示「已封顶」，并给出实际覆盖时长。24h 无 `L/U` 流量时，覆盖时长按采集启动时间计算，最多显示 24h。
+24h 明细每小时快照一次；`ips.tsv`/`ports.tsv`/`today.tsv` 不落盘，重启后由 `conn.log` 首轮聚合重建，避免同一份数据存多份。日汇总 10 列：`ip tcp udp ports portlist first last topdst topdst_n l`，其中 `l` 是 L 连接数；7/30 天的「公网命中」与 24h 同口径。来源 IP 三档统一按：公网命中降序 → 连接数降序 → 最近时间降序 → IP 升序。每日汇总每小时刷新一次，跨天时定稿；重启后自动读取当天已有汇总作为基线继续累计。明细达到 `conn_keep` 上限时页面显示「已封顶」，并给出实际覆盖时长。24h 无 `L/U` 流量时，覆盖时长按采集启动时间计算，最多显示 24h。
 
 ## 资源与闪存
 
