@@ -140,7 +140,7 @@ function cellGeo(x) {
 
 // 落点：有设备名显示名字，没名字显示 IP；悬浮统一给「名字 · IP」
 function cellHost(host, ip) {
-	if (!host && !ip) return '<td class="g-dash">—</td>';
+	if (!host && !ip) return '<td class="g-dash" title="无落点记录">—</td>';
 	if (!host) return '<td class="g-ip" title="' + esc(ip) + '">' + esc(ip) + '</td>';
 	if (host === ip) return '<td class="g-ip" title="' + esc(ip) + '">' + esc(ip) + '</td>';
 	return '<td class="g-host" title="' + esc(host + (ip ? ' · ' + ip : '')) + '">' + esc(host) + '</td>';
@@ -152,7 +152,7 @@ function cellDev(host, ip) {
 		'<span class="g-self">路由器</span></td>';
 	if (host && host !== ip) return '<td class="g-host" title="' + esc(ip) + '">' + esc(host) + '</td>';
 	if (ip) return '<td class="g-ip" title="' + esc(ip) + '">' + esc(ip) + '</td>';
-	return '<td class="g-dash">—</td>';
+	return '<td class="g-dash" title="无落点记录">—</td>';
 }
 
 function classTag(c, desc) {

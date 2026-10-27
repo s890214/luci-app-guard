@@ -61,11 +61,11 @@ ssh root@192.168.1.1 'sh /tmp/luci-app-guard/install.sh'
 | 内容 | 位置 | 留存 |
 |---|---|---|
 | 连接明细 / 来源 / 暴露面清单（24h） | `/tmp/guard/` | 内存，重启清零 |
-| 每日汇总 | `/etc/guard/daily/YYYY-MM-DD.tsv` | `retain_days` 天 |
+| 每日汇总（含主要落点/落点连接数） | `/etc/guard/daily/YYYY-MM-DD.tsv` | `retain_days` 天 |
 | 告警记录 | `/etc/guard/alerts.tsv`、`alerts.log` | `alert_keep` 条 |
 | 归属地缓存 | `/tmp/guard/geo.tsv` | 7 天 |
 
-每日汇总每小时刷新一次，跨天时定稿；重启后自动读取当天已有汇总作为基线继续累计。明细达到 `conn_keep` 上限时页面显示「已封顶」，并给出实际覆盖时长。
+每日汇总每小时刷新一次，跨天时定稿；重启后自动读取当天已有汇总作为基线继续累计。日汇总从 v1.1.2 起增加「主要落点 + 落点连接数」，7/30 天视图按天累加后选主要落点；升级前的历史日汇总没有这两列，对应行会显示 `—`。明细达到 `conn_keep` 上限时页面显示「已封顶」，并给出实际覆盖时长。
 
 ## 接口
 

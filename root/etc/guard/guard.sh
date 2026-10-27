@@ -59,7 +59,7 @@ sync_ports() {
 	} | sort -un | tr '\n' ' ' > "$DIR/exposed.txt"
 }
 
-# 按 IP 聚合：ip total first last ports c60 p60 portlist tcp udp l24 lports l60 sc60 topdst topclass sclist lplist
+# 按 IP 聚合：ip total first last ports c60 p60 portlist tcp udp l24 lports l60 sc60 topdst topclass sclist lplist topdst_n
 aggregate() {
 	awk -v MAPDIR="$DIR" -v now="$2" -v wanip="$3" "$(cat "$LIB")"'
 		{
@@ -100,10 +100,10 @@ aggregate() {
 		}
 		END {
 			for (ip in total)
-				printf "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%s\t%s\t%s\n",
+				printf "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%s\t%s\t%s\t%d\n",
 					ip, total[ip], first[ip], last[ip], pc[ip], c60[ip], p60c[ip], pl[ip],
 					tcp[ip], udp[ip], l24[ip], lpc[ip], l60[ip], scc[ip],
-					topd[ip], bestc[ip], scl[ip], lpl[ip]
+					topd[ip], bestc[ip], scl[ip], lpl[ip], topv[ip]
 		}' "$1"
 }
 
@@ -159,21 +159,41 @@ aggregate_ports() {
 }
 
 # 落盘当天汇总：基线(重启前) + 今日实时，按 IP 合并
+# 日汇总格式：ip tcp udp ports portlist first last [topdst topdst_n]
+# 旧文件只有前 7 列；新文件补主要落点和该落点的连接数，供 7/30 天视图选落点。
 write_daily() {
 	[ -s "$DIR/today.tsv" ] || return 0
 	awk -F'\t' '
-		FILENAME == ARGV[1] { b[$1] = $0; next }
-		{
-			ip = $1
-			if (ip in b) {
-				split(b[ip], x, "\t")
-				tcp = $9 + x[9]; udp = $10 + x[10]; ports = $5 + x[5]
-				pl = $8; n = split(x[8], xp, ",")
-				for (i = 1; i <= n; i++) if (index("," pl ",", "," xp[i] ",") == 0) pl = pl (pl == "" ? "" : ",") xp[i]
-				first = (x[3] + 0 < first + 0 || first == 0) ? x[3] : first
-				last = (x[4] + 0 > last + 0) ? x[4] : last
-			} else { tcp = $9; udp = $10; ports = $5; pl = $8; first = $3; last = $4 }
-			printf "%s\t%d\t%d\t%d\t%s\t%d\t%d\n", ip, tcp, udp, ports, pl, first, last
+		FILENAME == ARGV[1] { base[$1] = $0; next }
+		{ cur[$1] = $0 }
+		END {
+			# 基线里有、当天实时已没有的 IP 也要保留（重启后不会丢）
+			for (ip in base) {
+				if (ip in cur) continue
+				split(base[ip], x, "\t")
+				printf "%s\t%d\t%d\t%d\t%s\t%d\t%d", ip, x[2] + 0, x[3] + 0, x[4] + 0, x[5], x[6] + 0, x[7] + 0
+				if (x[8] != "" && x[8] != "-") printf "\t%s\t%d", x[8], x[9] + 0
+				printf "\n"
+			}
+			for (ip in cur) {
+				split(cur[ip], c, "\t")
+				tcp = c[9] + 0; udp = c[10] + 0; ports = c[5] + 0
+				pl = c[8]; first = c[3] + 0; last = c[4] + 0
+				dst = c[15]; dn = c[19] + 0
+				if (ip in base) {
+					split(base[ip], x, "\t")
+					tcp += x[2]; udp += x[3]; ports += x[4]
+					n = split(x[5], xp, ",")
+					for (i = 1; i <= n; i++)
+						if (xp[i] != "" && index("," pl ",", "," xp[i] ",") == 0)
+							pl = pl (pl == "" ? "" : ",") xp[i]
+					if (first == 0 || (x[6] + 0 > 0 && x[6] + 0 < first)) first = x[6] + 0
+					if (x[7] + 0 > last) last = x[7] + 0
+					# 同一天基线/实时都有落点时，取落点连接数更大的那个
+					if (x[8] != "" && x[8] != "-" && (dst == "" || x[9] + 0 > dn)) { dst = x[8]; dn = x[9] + 0 }
+				}
+				printf "%s\t%d\t%d\t%d\t%s\t%d\t%d\t%s\t%d\n", ip, tcp, udp, ports, pl, first, last, dst, dn
+			}
 		}' "$DIR/baseline.tsv" "$DIR/today.tsv" > "$DAILY/$1.tsv.tmp" && mv "$DAILY/$1.tsv.tmp" "$DAILY/$1.tsv"
 	find "$DAILY" -name '*.tsv' -mtime +"$RETAIN_DAYS" -delete 2>/dev/null
 }

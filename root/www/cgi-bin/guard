@@ -41,6 +41,7 @@ sources_24h() {
 }
 
 # 7/30 天来源：按 IP 合并每日汇总，watch = 端口清单命中公网端口
+# 每日汇总第 8/9 列是主要落点与该落点连接数；多天按落点连接数累加后取最大。
 sources_range() {
 	cut=$(date -d "@$((now - days * 86400))" +%F)
 	{
@@ -51,8 +52,15 @@ sources_range() {
 			[ "$b" \< "$cut" ] && continue
 			cat "$f"
 		done
-		[ -s "$DIR/today.tsv" ] && awk -F'\t' '{ print $1 "\t" $9 "\t" $10 "\t" $5 "\t" $8 "\t" $3 "\t" $4 }' "$DIR/today.tsv"
-	} | awk -F'\t' -v MAPDIR="$DIR" "$(cat "$LIB")"'
+		[ -s "$DIR/today.tsv" ] && awk -F'	' '{ print $1 "	" $9 "	" $10 "	" $5 "	" $8 "	" $3 "	" $4 "	" $15 "	" $19 }' "$DIR/today.tsv"
+	} | awk -F'	' -v MAPDIR="$DIR" "$(cat "$LIB")"'
+		BEGIN {
+			# 旧日汇总没有落点列，用当前 24h 的同一 IP 落点兜底
+			while ((getline l < (MAPDIR "/ips.tsv")) > 0) {
+				split(l, a, "	")
+				if (a[1] != "" && a[15] != "") CURDST[a[1]] = a[15]
+			}
+		}
 		{
 			ip = $1; tcp[ip] += $2; udp[ip] += $3; ports[ip] += $4
 			if (!(ip in first) || $6 + 0 < first[ip]) first[ip] = $6 + 0
@@ -61,12 +69,26 @@ sources_range() {
 			for (i = 1; i <= n; i++)
 				if (p[i] != "" && index("," pl[ip] ",", "," p[i] ",") == 0)
 					pl[ip] = pl[ip] (pl[ip] == "" ? "" : ",") p[i]
+			if ($8 != "" && $8 != "-") {
+				k = ip SUBSEP $8
+				dscore[k] += $9 + 0
+				if (!(k in dseen)) { dseen[k] = 1; dlist[ip] = dlist[ip] (dlist[ip] == "" ? "" : SUBSEP) $8 }
+			}
 		}
 		END {
 			for (ip in tcp) {
 				w = 0; n = split(pl[ip], p, ",")
 				for (i = 1; i <= n; i++) if (p[i] in EX) { w = 1; break }
-				printf "%s\t%d\t%d\t%d\t%d\t%s\t%d\t%d\t\n", ip, tcp[ip] + udp[ip], tcp[ip], udp[ip], ports[ip], pl[ip], last[ip], w
+				best = ""
+				if (dlist[ip] != "") {
+					bestn = -1; n = split(dlist[ip], ds, SUBSEP)
+					for (i = 1; i <= n; i++) {
+						k = ip SUBSEP ds[i]; v = dscore[k] + 0
+						if (v > bestn) { best = ds[i]; bestn = v }
+					}
+				}
+				if (best == "") best = CURDST[ip]
+				printf "%s	%d	%d	%d	%d	%s	%d	%d	%s\n", ip, tcp[ip] + udp[ip], tcp[ip], udp[ip], ports[ip], pl[ip], last[ip], w, best
 			}
 		}'
 }
