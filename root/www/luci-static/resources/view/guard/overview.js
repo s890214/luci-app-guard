@@ -97,7 +97,17 @@ function esc(s) {
 }
 
 function api(qs) {
-	return fetch('/cgi-bin/guard?' + qs, { cache: 'no-store' }).then(function(r) { return r.json(); });
+	var url = L.url('admin/services/guard/api');
+	return fetch(url + '?' + qs, { cache: 'no-store', credentials: 'same-origin' })
+		.then(function(r) {
+			if (r.status === 403) {
+				var e = new Error('auth');
+				e.auth = true;
+				throw e;
+			}
+			if (!r.ok) throw new Error('http ' + r.status);
+			return r.json();
+		});
 }
 
 var COLS = {
@@ -438,10 +448,10 @@ return view.extend({
 				refs.cover.title = s.capped
 					? '连接明细达到条数上限，24 小时窗口内较早的记录已被挤出'
 					: '连接明细实际覆盖时长';
-			}).catch(function() {
+			}).catch(function(err) {
 				refs.stat.className = 'g-pill err';
 				refs.dot.className = 'g-dot err';
-				refs.status.textContent = '采集器未运行';
+				refs.status.textContent = err && err.auth ? '登录已过期，请刷新页面' : '采集器未运行';
 			});
 		}
 
@@ -469,13 +479,14 @@ return view.extend({
 				refs.pageinfo.textContent = '第 ' + ST.page + ' / ' + pages + ' 页';
 				refs.prev.disabled = ST.page <= 1;
 				refs.next.disabled = ST.page >= pages;
-			}).catch(function() {
-				refs.tbody.innerHTML = emptyRow(COLS[ST.tab].length, '读取失败');
+			}).catch(function(err) {
+				refs.tbody.innerHTML = emptyRow(COLS[ST.tab].length,
+					err && err.auth ? '登录已过期，请刷新页面' : '读取失败');
 			});
 		}
 
 		// 初始加载 + 轮询（切走页面由 poll 自动停）
-		// state/聚合都是 60 秒更新，30/60 秒足够，避免用 5/15 秒空转路由器 CGI。
+		// state/聚合都是 60 秒更新，30/60 秒足够，避免用 5/15 秒空转 LuCI API。
 		window.setTimeout(function() { fitView(); loadSummary(); loadList(); }, 0);
 		poll.add(function() { return loadSummary(); }, 30);
 		poll.add(function() { return loadList(); }, 60);

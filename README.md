@@ -7,7 +7,7 @@ OpenWrt / ImmortalWrt 上的**外部访问监控**插件：采样 conntrack，�
 - 只记 `L`（公网服务/端口转发）和 `U`（UPnP 映射），这两类才是真实外部暴露面。
 - 不记 `P`：被 fw4 `reject_from_wan` 拒绝的盲扫没有威胁，而且 5 秒轮询也抓不到短命条目。
 - 不记 `B`：无端口映射、落到内机的 P2P/fullcone 回连占原数据 98% 以上，无法用于判断渗透。
-- 24h 明细致 `/tmp`（tmpfs），不写闪存；日汇总只保留 `L/U`，旧版约 13–18 MB/天，现降到 < 0.5 MB/天。
+- 24h 明细运行时在 `/tmp`（tmpfs），每小时把唯一源 `conn.log` 快照到 `/etc/guard/detail`；日汇总只保留 `L/U`，旧版约 13–18 MB/天，现降到 < 0.5 MB/天。
 
 ## 功能
 
@@ -16,7 +16,7 @@ OpenWrt / ImmortalWrt 上的**外部访问监控**插件：采样 conntrack，�
 - **四个视图**：来源 IP（归属地/主要落点/公网命中数）、暴露面（L + UPnP 端口清单，含 24h 无流量端口）、告警事件、最近连接。
 - **两类告警**（阈值可配）：60 秒内 ≥N 个暴露端口 = 端口扫描；≥M 次连接公网服务 = 高频。只统计 `L`，P2P 不会触发。
 - **归属地**：ip-api.com 批量查询，只查 `L/U` 来源前 120 + 告警来源，缓存 7 天，中文显示，可关。
-- 三级时间范围：24 小时（内存明细）、7 天、30 天（每日汇总落盘）。
+- 三级时间范围：24 小时（内存明细 + 每小时闪存快照，重启可恢复）、7 天、30 天（每日汇总落盘）。
 - LuCI 原生视图（不用 iframe），固定行高/表格高度，页签切换不跳动。
 - 常驻内存约 1.2–1.5 MB，纯 ash + awk，无额外依赖。
 
@@ -46,6 +46,7 @@ ssh root@192.168.1.1 'sh /tmp/luci-app-guard/install.sh'
 | `retain_days` | 30 | 每日汇总保留天数 |
 | `alert_keep` | 5000 | 告警保留条数 |
 | `conn_keep` | 50000 | 24h 连接明细条数上限（只含 L/U） |
+| `detail_flash` | 1 | 24h 明细每小时快照到 `/etc/guard/detail`，重启后恢复 |
 | `geo` | 1 | 是否查询来源 IP 归属地 |
 | `wan_if` | pppoe-wan | WAN 接口名；用于识别本机 WAN 地址 |
 
@@ -67,27 +68,30 @@ ssh root@192.168.1.1 'sh /tmp/luci-app-guard/install.sh'
 
 | 内容 | 位置 | 留存 |
 |---|---|---|
-| 连接明细 / 来源 / 暴露面清单（24h） | `/tmp/guard/` | 内存，重启清零 |
+| 连接明细 / 来源 / 暴露面清单（24h） | `/tmp/guard/` | 内存运行态，重启清零 |
+| 24h 明细快照（唯一源 `conn.log` + 去重表） | `/etc/guard/detail/` | 每小时覆盖，重启恢复 |
 | 每日汇总（只含 L/U，含主要落点/落点连接数） | `/etc/guard/daily/YYYY-MM-DD.tsv` | `retain_days` 天 |
 | 告警记录（单文件） | `/etc/guard/alerts.tsv` | `alert_keep` 条 |
 | 归属地缓存 | `/tmp/guard/geo.tsv` | 7 天 |
 
-每日汇总每小时刷新一次，跨天时定稿；重启后自动读取当天已有汇总作为基线继续累计。明细达到 `conn_keep` 上限时页面显示「已封顶」，并给出实际覆盖时长。24h 无 `L/U` 流量时，覆盖时长按采集启动时间计算，最多显示 24h。
+24h 明细每小时快照一次；`ips.tsv`/`ports.tsv`/`today.tsv` 不落盘，重启后由 `conn.log` 首轮聚合重建，避免同一份数据存多份。每日汇总每小时刷新一次，跨天时定稿；重启后自动读取当天已有汇总作为基线继续累计。明细达到 `conn_keep` 上限时页面显示「已封顶」，并给出实际覆盖时长。24h 无 `L/U` 流量时，覆盖时长按采集启动时间计算，最多显示 24h。
 
 ## 资源与闪存
 
-- 24h 明细只存 `L/U`，通常几百条到几千条；`/tmp` 为 tmpfs，不写 eMMC。
+- 24h 明细只存 `L/U`，通常几百条到几千条；运行态在 tmpfs，每小时快照到 `/etc/guard/detail`（当前约 1 KB/小时）。
 - 日汇总每小时写一次，每天约 10–30 KB；告警只在新增时追加并裁剪。
 - 旧版每分钟重写 `alerts.tsv`/`alerts.log` 的行为已移除；按 30 天估算总写入 < 0.5 MB/天。
 
 ## 接口
 
+所有接口走 LuCI 登录态，未登录返回 403；旧的独立 `/cgi-bin/guard` 已移除。
+
 ```
-/cgi-bin/guard?view=summary
-/cgi-bin/guard?view=sources&range=24h|7d|30d&page=1&size=15&proto=tcp|all&only=watch|all
-/cgi-bin/guard?view=ports&page=1&size=15&proto=tcp|all&only=watch|all
-/cgi-bin/guard?view=alerts&range=24h|7d|30d&page=1&size=15&only=watch|all
-/cgi-bin/guard?view=events&page=1&size=15&proto=tcp|all&only=watch|all
+/cgi-bin/luci/admin/services/guard/api?view=summary
+/cgi-bin/luci/admin/services/guard/api?view=sources&range=24h|7d|30d&page=1&size=15&proto=tcp|all&only=watch|all
+/cgi-bin/luci/admin/services/guard/api?view=ports&page=1&size=15&proto=tcp|all&only=watch|all
+/cgi-bin/luci/admin/services/guard/api?view=alerts&range=24h|7d|30d&page=1&size=15&only=watch|all
+/cgi-bin/luci/admin/services/guard/api?view=events&page=1&size=15&proto=tcp|all&only=watch|all
 ```
 
 ## 卸载
@@ -95,8 +99,9 @@ ssh root@192.168.1.1 'sh /tmp/luci-app-guard/install.sh'
 ```sh
 /etc/init.d/guard stop
 /etc/init.d/guard disable
-rm -f /etc/init.d/guard /etc/guard/guard.sh /www/cgi-bin/guard \
-      /usr/lib/guard/class.awk /www/luci-static/resources/view/guard/overview.js \
+rm -f /etc/init.d/guard /etc/guard/guard.sh /usr/lib/guard/guard-cgi \
+      /usr/lib/guard/class.awk /usr/lib/lua/luci/controller/guard.lua \
+      /www/luci-static/resources/view/guard/overview.js \
       /usr/share/luci/menu.d/luci-app-guard.json
 rm -rf /etc/guard /usr/lib/guard
 ```
@@ -105,6 +110,7 @@ rm -rf /etc/guard /usr/lib/guard
 
 - 只读取 `/proc/net/nf_conntrack` 与 nft 链，不修改任何规则。
 - 不解析载荷、URL、DNS，不记录源端口；只保留时间、来源 IP、目的端口、协议、落点。
+- 数据接口是 LuCI controller，走 LuCI 登录态；未登录直接 403，不再有独立的公开 `/cgi-bin/guard`。
 - 归属地查询会把来源公网 IP 发往 ip-api.com，可设 `option geo '0'` 关闭。
 - 手动 `config rule` 目前只识别 `src=wan` + 固定 `dest_port`；端口段和 IPv6 仍不支持。
 - 刷固件前请备份 `/etc/guard`（不在 sysupgrade 默认保留清单里）。

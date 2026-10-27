@@ -6,9 +6,12 @@ SRC=$(cd "$(dirname "$0")" && pwd)
 [ -d "$SRC/root" ] || { echo "缺少 root/ 目录"; exit 1; }
 
 cp -r "$SRC/root/." /
-chmod 755 /etc/guard/guard.sh /etc/init.d/guard /www/cgi-bin/guard
-chmod 644 /etc/config/guard /www/luci-static/resources/view/guard/overview.js /usr/lib/guard/class.awk
-mkdir -p /etc/guard/daily
+rm -f /www/cgi-bin/guard
+rm -rf /www/guard
+chmod 755 /etc/guard/guard.sh /etc/init.d/guard /usr/lib/guard/guard-cgi
+chmod 644 /etc/config/guard /www/luci-static/resources/view/guard/overview.js \
+	/usr/lib/guard/class.awk /usr/lib/lua/luci/controller/guard.lua
+mkdir -p /etc/guard/daily /etc/guard/detail
 
 /etc/init.d/guard enable
 /etc/init.d/guard restart

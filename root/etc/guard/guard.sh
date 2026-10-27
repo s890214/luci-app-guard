@@ -3,7 +3,7 @@
 # 数据源：/proc/net/nf_conntrack，只取原始方向 dst=WAN 的入站连接
 # 只保留：L = 公网服务/端口转发；U = UPnP 映射
 # 丢弃：P2P/fullcone 回连、被防火墙拒绝的探测、ignore.list 命中
-# 留存：L/U 明细 24h（内存）；按天汇总落盘 retain_days 天；告警 alert_keep 条
+# 留存：L/U 明细 24h（内存，每小时快照到 /etc/guard/detail）；按天汇总落盘 retain_days 天；告警 alert_keep 条
 
 cfg() { v=$(uci -q get "guard.main.$1" 2>/dev/null); [ -z "$v" ] && v=$2; echo "$v"; }
 
@@ -11,6 +11,7 @@ DIR=${GUARD_DIR:-/tmp/guard}
 DATA=${GUARD_DATA:-/etc/guard}
 ALERTS=$DATA/alerts.tsv
 DAILY=$DATA/daily
+DETAIL=${GUARD_DETAIL:-$DATA/detail}
 CTFILE=${GUARD_CONNTRACK:-/proc/net/nf_conntrack}
 WANIF=${GUARD_WANIF:-$(cfg wan_if pppoe-wan)}
 LIB=${GUARD_LIB:-/usr/lib/guard/class.awk}
@@ -23,17 +24,28 @@ RETAIN_DAYS=$(cfg retain_days 30)
 ALERT_KEEP=$(cfg alert_keep 5000)
 CONN_KEEP=$(cfg conn_keep 50000)
 GEO_ENABLE=${GUARD_GEO:-$(cfg geo 1)}
+DETAIL_FLASH=${GUARD_DETAIL_FLASH:-$(cfg detail_flash 1)}
 HOURLY=${GUARD_HOURLY:-3600}
 LANIP=${GUARD_LANIP:-$(uci -q get network.lan.ipaddr 2>/dev/null)}
 LANIP=${LANIP%%/*}
 [ -z "$LANIP" ] && LANIP=192.168.1.1
 [ "$(cfg enabled 1)" = "0" ] && exit 0
 
-mkdir -p "$DIR" "$DATA" "$DAILY"
+mkdir -p "$DIR" "$DATA" "$DAILY" "$DETAIL"
 touch "$DIR/conn.log" "$DIR/seen.ts" "$DIR/alerted" "$DIR/alerts.tsv" "$DIR/start.ts" \
 	"$DIR/ips.tsv" "$DIR/ports.tsv" "$DIR/hosts.tsv" "$DIR/upnp.tsv" "$DIR/geo.tsv" \
 	"$DIR/ignore.list" "$DIR/exposed.txt" "$DIR/exposed.map" "$ALERTS"
 [ -f "$DATA/ignore.list" ] && cp "$DATA/ignore.list" "$DIR/ignore.list"
+
+# 24h 明细每小时快照在 $DETAIL/conn.log；重启后先恢复，ips/ports 由首轮聚合重建
+if [ "$DETAIL_FLASH" = "1" ]; then
+	if [ ! -s "$DIR/conn.log" ] && [ -s "$DETAIL/conn.log" ]; then
+		cp "$DETAIL/conn.log" "$DIR/conn.log"
+	fi
+	if [ ! -s "$DIR/seen.ts" ] && [ -s "$DETAIL/seen.ts" ]; then
+		cp "$DETAIL/seen.ts" "$DIR/seen.ts"
+	fi
+fi
 
 # 内机 IP -> 设备名（静态租约优先，其次动态租约）
 sync_hosts() {
@@ -270,6 +282,20 @@ write_daily() {
 		find "$DAILY" -name '*.tsv' -mtime +"$RETAIN_DAYS" -exec rm -f {} \; 2>/dev/null
 }
 
+# 24h 明细每小时快照：只持久化 conn.log（唯一源）+ 15 分钟去重表；ips/ports 是派生数据
+persist_detail() {
+	[ "$DETAIL_FLASH" = "1" ] || return 0
+	[ -s "$DIR/conn.log" ] || return 0
+	if cp "$DIR/conn.log" "$DETAIL/conn.log.tmp" 2>/dev/null; then
+		mv "$DETAIL/conn.log.tmp" "$DETAIL/conn.log" 2>/dev/null
+	fi
+	if [ -s "$DIR/seen.ts" ]; then
+		if cp "$DIR/seen.ts" "$DETAIL/seen.ts.tmp" 2>/dev/null; then
+			mv "$DETAIL/seen.ts.tmp" "$DETAIL/seen.ts" 2>/dev/null
+		fi
+	fi
+}
+
 # 归属地：只查 L/U 来源里连接数前 120 + 24h 告警来源；缓存 7 天；每小时最多 100 个
 geo_refresh() {
 	[ "$GEO_ENABLE" = "1" ] || return 0
@@ -459,6 +485,7 @@ while :; do
 			last_hour=$now
 			sync_ports
 			write_daily "$day"
+			persist_detail
 		fi
 
 		if [ $((now - last_geo)) -ge 3600 ]; then

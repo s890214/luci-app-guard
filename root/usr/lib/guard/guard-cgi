@@ -1,5 +1,5 @@
 #!/bin/sh
-# luci-app-guard 数据接口
+# luci-app-guard 数据接口（仅供 LuCI controller 调用，不直接暴露）
 # view=summary|sources|ports|alerts|events
 # range=24h|7d|30d  page=N  size=N  proto=tcp|all  only=watch|all
 # 只返回 L（公网服务/端口转发）与 U（UPnP）两类；P2P/被拒绝探测不入库。
@@ -25,10 +25,6 @@ only=$(qs only); [ -z "$only" ] && only=watch
 now=$(date +%s)
 today=$(date +%F)
 tab=$(printf '\t')
-
-printf 'Content-Type: application/json; charset=utf-8\r\n'
-printf 'Cache-Control: no-store\r\n'
-printf '\r\n'
 
 case "$range" in
 	7d)  days=7 ;;

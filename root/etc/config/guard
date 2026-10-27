@@ -12,6 +12,8 @@ config guard 'main'
 	option alert_keep '5000'
 	# 连接明细保留条数（24h 窗口内的上限；只含 L/U）
 	option conn_keep '50000'
+	# 24h 明细每小时快照到 /etc/guard/detail（只含 L/U；重启后可恢复）
+	option detail_flash '1'
 	# 来源 IP 归属地查询（ip-api.com，仅查 L/U 来源前 120 + 告警来源）
 	option geo '1'
 	# WAN 接口名；PPPoE 拨号环境是 pppoe-wan
