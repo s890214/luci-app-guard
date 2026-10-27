@@ -10,3 +10,7 @@ config guard 'main'
 	option retain_days '30'
 	# 告警保留条数
 	option alert_keep '5000'
+	# 连接明细保留条数（24h 窗口内的上限）
+	option conn_keep '50000'
+	# 来源 IP 归属地查询（ip-api.com，仅查连接数前 120）
+	option geo '1'

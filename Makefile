@@ -1,8 +1,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-guard
-PKG_VERSION:=1.0.0
-PKG_RELEASE:=1
+PKG_VERSION:=1.1.0
+PKG_RELEASE:=2
 PKG_LICENSE:=MIT
 PKG_MAINTAINER:=s890214
 
@@ -28,12 +28,14 @@ endef
 
 define Package/luci-app-guard/install
 	$(INSTALL_DIR) $(1)/etc/config $(1)/etc/init.d $(1)/etc/guard/daily
+	$(INSTALL_DIR) $(1)/usr/lib/guard
 	$(INSTALL_DIR) $(1)/www/guard $(1)/www/cgi-bin
 	$(INSTALL_DIR) $(1)/www/luci-static/resources/view/guard
 	$(INSTALL_DIR) $(1)/usr/share/luci/menu.d
 	$(INSTALL_CONF) ./root/etc/config/guard $(1)/etc/config/guard
 	$(INSTALL_BIN) ./root/etc/init.d/guard $(1)/etc/init.d/guard
 	$(INSTALL_BIN) ./root/etc/guard/guard.sh $(1)/etc/guard/guard.sh
+	$(INSTALL_DATA) ./root/usr/lib/guard/class.awk $(1)/usr/lib/guard/class.awk
 	$(INSTALL_BIN) ./root/www/cgi-bin/guard $(1)/www/cgi-bin/guard
 	$(INSTALL_DATA) ./root/www/guard/index.html $(1)/www/guard/index.html
 	$(INSTALL_DATA) ./root/www/luci-static/resources/view/guard/overview.js $(1)/www/luci-static/resources/view/guard/overview.js

@@ -7,7 +7,7 @@ SRC=$(cd "$(dirname "$0")" && pwd)
 
 cp -r "$SRC/root/." /
 chmod 755 /etc/guard/guard.sh /etc/init.d/guard /www/cgi-bin/guard
-chmod 644 /www/guard/index.html /etc/config/guard /www/luci-static/resources/view/guard/overview.js
+chmod 644 /www/guard/index.html /etc/config/guard /www/luci-static/resources/view/guard/overview.js /usr/lib/guard/class.awk
 mkdir -p /etc/guard/daily
 
 /etc/init.d/guard enable

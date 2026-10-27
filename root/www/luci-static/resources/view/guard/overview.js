@@ -2,7 +2,7 @@
 'require view';
 'require poll';
 
-var ST = { tab: 'sources', range: '24h', page: 1, size: 15, proto: 'tcp', total: 0 };
+var ST = { tab: 'sources', range: '24h', page: 1, size: 15, proto: 'tcp', only: 'watch', total: 0 };
 
 var CSS = [
 '.guard{--line:#e9ecf2;--soft:#f2f4f8;--txt:#1f2430;--mute:#79808f;--main:#5e72e4;--navy:#33409c;--row:33px;--head:32px;--sh:0 1px 2px rgba(17,24,39,.04),0 2px 8px rgba(17,24,39,.04);display:flex;flex-direction:column;font-size:13px;line-height:1.5;color:var(--txt)}',
@@ -22,6 +22,7 @@ var CSS = [
 '.guard .g-meta{display:flex;align-items:center;flex-wrap:wrap;gap:2px 12px;font-size:12.5px;color:var(--mute);margin:2px 0 0;min-height:19px}',
 '.guard .g-mi{display:inline-flex;align-items:center;white-space:nowrap;max-width:100%}',
 '.guard .g-exposed{overflow:hidden;text-overflow:ellipsis}',
+'.guard .g-cover{color:#9a6a1f}',
 '.guard .g-pill{display:inline-flex;align-items:center;gap:5px;background:#e9f7ef;color:#1f7a4d;border-radius:999px;padding:1px 9px 1px 8px;font-size:12px;font-weight:500;white-space:nowrap;flex:none}',
 '.guard .g-pill.err{background:#fdecec;color:#c33333}',
 '.guard .g-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:#22a06b;flex:none;animation:g-pulse 2.4s ease-in-out infinite}',
@@ -32,6 +33,7 @@ var CSS = [
 '.guard .g-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--ac,#5e72e4)}',
 '.guard .g-card .k{color:var(--mute);font-size:12px;line-height:1.5;letter-spacing:.01em}',
 '.guard .g-card .v{margin-top:1px;font-size:22px;font-weight:600;line-height:1.3;font-variant-numeric:tabular-nums;letter-spacing:-.01em}',
+'.guard .g-card .s{margin-top:0;color:#8b93a1;font-size:11.5px;line-height:1.45;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
 '.guard .g-panel{background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden;flex:1 1 auto;min-height:0;display:flex;flex-direction:column;box-shadow:var(--sh)}',
 '.guard .g-tabs{display:flex;gap:2px;padding:3px 8px;border-bottom:1px solid var(--line);flex:none}',
 '.guard .g-tab{padding:3px 13px;border-radius:7px;cursor:pointer;font-size:13px;line-height:1.5;color:var(--mute);transition:background .15s,color .15s;-webkit-user-select:none;user-select:none}',
@@ -43,8 +45,8 @@ var CSS = [
 '.guard .g-bar .muted{color:var(--mute);font-size:12.5px}',
 // 数据不足时下面留白，只由最后一条数据的下边框收尾，不再逐行画分隔线
 '.guard .g-tw{flex:1 1 auto;min-height:calc(8*var(--row) + var(--head));overflow:auto}',
-'.guard .g-table{width:100%;min-width:760px;margin:0;border:0;border-collapse:collapse;table-layout:fixed;background:none;box-shadow:none}',
-'.guard .g-table th,.guard .g-table td{padding:0 14px;border:0;border-bottom:1px solid var(--soft);text-align:left;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:none}',
+'.guard .g-table{width:100%;min-width:840px;margin:0;border:0;border-collapse:collapse;table-layout:fixed;background:none;box-shadow:none}',
+'.guard .g-table th,.guard .g-table td{padding:0 12px;border:0;border-bottom:1px solid var(--soft);text-align:left;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:none}',
 '.guard .g-table th{height:var(--head);font-size:12px;font-weight:600;letter-spacing:.02em;color:#6b7280;background:#f2f4f8;position:sticky;top:0;z-index:1}',
 '.guard .g-tw::-webkit-scrollbar{width:9px;height:9px}',
 '.guard .g-tw::-webkit-scrollbar-thumb{background:#d5dae4;border-radius:5px;border:2px solid #fff}',
@@ -58,14 +60,20 @@ var CSS = [
 '.guard .g-table tbody tr:last-child td{border-bottom:1px solid var(--soft)}',
 '.guard .g-table .num{text-align:center;font-variant-numeric:tabular-nums}',
 '.guard .g-num0{color:#b3bac6}',
+'.guard .g-watch{color:#d64545;font-weight:600}',
 '.guard .g-time{color:var(--mute);font-variant-numeric:tabular-nums}',
 '.guard .g-ip{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;letter-spacing:-.01em}',
+'.guard .g-geo{color:#5c6474;font-size:12px}',
+'.guard .g-host{color:#334155;font-size:12.5px}',
 '.guard .g-proto{color:var(--mute);font-size:12px;letter-spacing:.03em;text-transform:uppercase}',
-'.guard .g-ports{color:#5c6474;font-size:12.5px}',
-'.guard .g-tag{display:inline-block;padding:0 8px;border-radius:999px;font-size:11.5px;line-height:18px;font-weight:500}',
+'.guard .g-tag{display:inline-block;padding:0 8px;border-radius:999px;font-size:11.5px;line-height:18px;font-weight:500;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}',
 '.guard .g-tag.scan{background:#fdecec;color:#d64545}',
 '.guard .g-tag.rate{background:#fdf3e3;color:#bf7212}',
-'.guard .g-ex{display:inline-block;padding:0 7px;border-radius:5px;background:#eaf1ff;color:#2f6fed;font-size:11.5px;line-height:18px;font-weight:500}',
+'.guard .g-tag.l{background:#fdecec;color:#c33333}',
+'.guard .g-tag.p{background:#fdf3e3;color:#b45309}',
+'.guard .g-tag.u{background:#eef2ff;color:#4f5bd5}',
+'.guard .g-tag.b{background:#f1f3f6;color:#64748b}',
+'.guard .g-tag.n{background:#f1f3f6;color:#94a3b8}',
 '.guard .g-dash{color:#ccd1db}',
 '.guard .g-self{color:#5c6474;font-size:12px}',
 '.guard .g-table td.g-empty{height:auto;padding:0}',
@@ -96,9 +104,10 @@ function api(qs) {
 }
 
 var COLS = {
-	sources: [['来源 IP', 24, 0], ['连接数', 7, 1], ['TCP', 6, 1], ['UDP', 6, 1], ['端口数', 7, 1], ['端口', 36, 0], ['最近', 14, 0]],
-	alerts:  [['时间', 19, 0], ['类型', 10, 0], ['来源 IP', 26, 0], ['连接', 6, 1], ['端口', 39, 0]],
-	events:  [['时间', 18, 0], ['来源 IP', 26, 0], ['目标 IP', 26, 0], ['目标端口', 10, 1], ['协议', 8, 0], ['对外端口', 12, 0]]
+	sources: [['来源 IP', 19, 0], ['归属地', 25, 0], ['设备', 14, 0], ['连接', 7, 1], ['TCP', 5, 1], ['UDP', 5, 1], ['关注', 6, 1], ['最近', 19, 0]],
+	ports:   [['设备', 16, 0], ['目标 IP', 13, 0], ['端口', 8, 1], ['归属', 27, 0], ['外部来源', 10, 1], ['连接', 9, 1], ['最近', 17, 0]],
+	alerts:  [['时间', 18, 0], ['类型', 10, 0], ['来源 IP', 15, 0], ['归属地', 22, 0], ['连接', 6, 1], ['端口', 29, 0]],
+	events:  [['时间', 14, 0], ['来源 IP', 15, 0], ['归属地', 17, 0], ['设备', 13, 0], ['端口', 7, 1], ['协议', 6, 0], ['判定', 28, 0]]
 };
 
 var EMPTY_ICON = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" ' +
@@ -116,32 +125,70 @@ function cellNum(v) {
 	return '<td class="num' + (v ? '' : ' g-num0') + '">' + v + '</td>';
 }
 
-// 目标 IP = DNAT 之后的真实落点。落回路由器自己时写「本机」更好读，
-// 转发到内网设备（NAS 之类）时就直接显示那台机器的 IP。
-function cellDst(d) {
-	if (!d) return '<td class="g-dash">—</td>';
-	if (d === window.location.hostname) return '<td><span class="g-self">本机</span></td>';
-	return '<td class="g-ip" title="' + esc(d) + '">' + esc(d) + '</td>';
+function geoText(x) {
+	var place = (x.country || '') + (x.region ? '·' + x.region : '');
+	var isp = x.isp || '';
+	if (!place && !isp) return '';
+	return (place + (isp ? ' ' + isp : '')).trim();
+}
+
+function cellGeo(x) {
+	var full = [x.country, x.region, x.isp].filter(function(v) { return v; }).join(' ');
+	if (!full) return '<td class="g-dash">—</td>';
+	return '<td class="g-geo" title="' + esc(full) + '">' + esc(geoText(x)) + '</td>';
+}
+
+// 只显示设备名；没有名字就留空（端口落点表另有目标 IP 列）
+function cellHost(host, ip) {
+	if (!host || host === ip) return '<td class="g-dash" title="' + esc(ip || '') + '">—</td>';
+	return '<td class="g-host" title="' + esc(host + (ip ? ' · ' + ip : '')) + '">' + esc(host) + '</td>';
+}
+
+// 事件流没有单独的目标 IP 列：没设备名时退回显示 IP，避免丢信息
+function cellDev(host, ip) {
+	if (ip && ip === ST.wan) return '<td><span class="g-self">本机</span></td>';
+	if (host && host !== ip) return '<td class="g-host" title="' + esc(ip) + '">' + esc(host) + '</td>';
+	if (ip) return '<td class="g-ip" title="' + esc(ip) + '">' + esc(ip) + '</td>';
+	return '<td class="g-dash">—</td>';
+}
+
+function classTag(c, desc) {
+	if (c === 'L') return '<span class="g-tag l">公网服务</span>';
+	if (c === 'P') return '<span class="g-tag p">未开放</span>';
+	if (c === 'U') return '<span class="g-tag u" title="' + esc(desc || '') + '">UPnP' + (desc ? ' · ' + esc(desc) : '') + '</span>';
+	if (c === 'B') return '<span class="g-tag b">内机回连</span>';
+	if (c === 'N') return '<span class="g-tag n">已忽略</span>';
+	return '<span class="g-dash">—</span>';
 }
 
 function rowHTML(tab, x) {
 	if (tab === 'sources')
 		return '<tr><td class="g-ip" title="' + esc(x.ip) + '">' + esc(x.ip) + '</td>' +
-			cellNum(x.total) + cellNum(x.tcp) + cellNum(x.udp) + cellNum(x.ports) +
-			'<td class="g-ports" title="' + esc(x.portlist) + '">' + esc(x.portlist) + '</td>' +
+			cellGeo(x) + cellHost(x.host, '') +
+			cellNum(x.total) + cellNum(x.tcp) + cellNum(x.udp) +
+			'<td class="num' + (x.watch ? ' g-watch' : ' g-num0') + '">' + x.watch + '</td>' +
+			'<td class="g-time">' + esc(x.last) + '</td></tr>';
+	if (tab === 'ports')
+		return '<tr>' + cellHost(x.host, x.dst) +
+			'<td class="g-ip" title="' + esc(x.dst) + '">' + esc(x.dst) + '</td>' +
+			cellNum(x.dport) +
+			'<td title="' + esc(x.desc || '') + '">' + classTag(x.class, x.desc) + '</td>' +
+			cellNum(x.srcs) + cellNum(x.count) +
 			'<td class="g-time">' + esc(x.last) + '</td></tr>';
 	if (tab === 'alerts') {
 		var t = x.type === 'PORT_SCAN' ? '<span class="g-tag scan">端口扫描</span>' :
 			x.type === 'HIGH_RATE' ? '<span class="g-tag rate">高频连接</span>' : esc(x.type);
 		return '<tr><td class="g-time">' + esc(x.t) + '</td><td>' + t + '</td>' +
-			'<td class="g-ip" title="' + esc(x.ip) + '">' + esc(x.ip) + '</td>' + cellNum(x.count) +
-			'<td class="g-ports" title="' + esc(x.ports) + '">' + esc(x.ports) + '</td></tr>';
+			'<td class="g-ip" title="' + esc(x.ip) + '">' + esc(x.ip) + '</td>' + cellGeo(x) +
+			cellNum(x.count) +
+			'<td title="' + esc(x.ports) + '">' + esc(x.ports) + '</td></tr>';
 	}
 	return '<tr><td class="g-time">' + esc(x.t) + '</td>' +
-		'<td class="g-ip" title="' + esc(x.ip) + '">' + esc(x.ip) + '</td>' + cellDst(x.dst) +
+		'<td class="g-ip" title="' + esc(x.ip) + '">' + esc(x.ip) + '</td>' + cellGeo(x) +
+		cellDev(x.host, x.dst) +
 		cellNum(x.dport) +
 		'<td class="g-proto">' + esc(x.proto) + '</td>' +
-		'<td>' + (x.exposed ? '<span class="g-ex">对外</span>' : '<span class="g-dash">—</span>') + '</td></tr>';
+		'<td title="' + esc(x.desc || '') + '">' + classTag(x.class, '') + '</td></tr>';
 }
 
 // 对外端口：把连续端口合并成区间（55508 55509 -> 55508-55509），
@@ -181,6 +228,12 @@ function fmtExposed(s) {
 	};
 }
 
+function fmtSpan(min) {
+	min = parseInt(min, 10) || 0;
+	if (min >= 60) return Math.floor(min / 60) + ' 小时 ' + (min % 60) + ' 分';
+	return min + ' 分';
+}
+
 return view.extend({
 	render: function() {
 		var refs = {};
@@ -195,6 +248,7 @@ return view.extend({
 		refs.wan = E('span', { 'class': 'g-mi' }, '');
 		refs.uptime = E('span', { 'class': 'g-mi' }, '');
 		refs.exposed = E('span', { 'class': 'g-mi g-exposed' }, '');
+		refs.cover = E('span', { 'class': 'g-mi g-cover' }, '');
 
 		// 标题 + 状态 + 更新时间 + 环境信息，收进一张标准白卡里
 		var head = E('div', { 'class': 'g-hd' }, [
@@ -203,26 +257,28 @@ return view.extend({
 				refs.stat,
 				refs.updated
 			]),
-			E('div', { 'class': 'g-meta' }, [refs.wan, refs.uptime, refs.exposed])
+			E('div', { 'class': 'g-meta' }, [refs.wan, refs.uptime, refs.exposed, refs.cover])
 		]);
 
 		function card(k, id, color) {
 			var v = E('div', { 'class': 'v' }, '–');
+			var s = E('div', { 'class': 's' }, '');
 			refs[id] = v;
+			refs[id + '-s'] = s;
 			return E('div', { 'class': 'g-card', 'style': '--ac:' + color }, [
-				E('div', { 'class': 'k' }, k), v
+				E('div', { 'class': 'k' }, k), v, s
 			]);
 		}
 
 		var cards = E('div', { 'class': 'g-cards' }, [
-			card('24 小时连接数', 'c-conn', '#5e72e4'),
+			card('24 小时连接', 'c-conn', '#5e72e4'),
 			card('24 小时来源 IP', 'c-ips', '#11a5a0'),
-			card('当前活跃外部连接', 'c-active', '#8b5cf6'),
+			card('关注连接', 'c-watch', '#d64545'),
 			card('24 小时告警', 'c-alerts', '#e8833a')
 		]);
 
 		refs.tabs = E('div', { 'class': 'g-tabs' });
-		[['sources', '来源 IP'], ['alerts', '告警事件'], ['events', '最近连接']].forEach(function(p) {
+		[['sources', '来源 IP'], ['ports', '端口落点'], ['alerts', '告警事件'], ['events', '最近连接']].forEach(function(p) {
 			refs.tabs.appendChild(E('div', {
 				'class': 'g-tab' + (p[0] === ST.tab ? ' on' : ''),
 				'data-tab': p[0],
@@ -237,14 +293,19 @@ return view.extend({
 		]);
 		refs.proto = E('select', { 'change': function(ev) { ST.proto = ev.target.value; ST.page = 1; loadList(); } }, [
 			E('option', { 'value': 'tcp', 'selected': ST.proto === 'tcp' ? 'selected' : null }, '仅 TCP'),
-			E('option', { 'value': 'all', 'selected': ST.proto === 'all' ? 'selected' : null }, '全部')
+			E('option', { 'value': 'all', 'selected': ST.proto === 'all' ? 'selected' : null }, '全部协议')
 		]);
-		refs.rangeLabel = E('span', { 'class': 'muted' }, '时间范围');
+		refs.only = E('select', { 'change': function(ev) { ST.only = ev.target.value; ST.page = 1; loadList(); } }, [
+			E('option', { 'value': 'watch', 'selected': ST.only === 'watch' ? 'selected' : null }, '只看关注'),
+			E('option', { 'value': 'all', 'selected': ST.only === 'all' ? 'selected' : null }, '全部流量')
+		]);
+		refs.rangeLabel = E('span', { 'class': 'muted' }, '范围');
 		refs.protoLabel = E('span', { 'class': 'muted' }, '协议');
+		refs.onlyLabel = E('span', { 'class': 'muted' }, '视角');
 		refs.count = E('span', { 'class': 'muted' }, '');
 
 		var bar = E('div', { 'class': 'g-bar' }, [
-			refs.rangeLabel, refs.range, refs.protoLabel, refs.proto,
+			refs.rangeLabel, refs.range, refs.protoLabel, refs.proto, refs.onlyLabel, refs.only,
 			E('span', { 'class': 'sp' }), refs.count
 		]);
 
@@ -253,7 +314,7 @@ return view.extend({
 		// 注意：E() 只把字符串当文本节点，HTML 必须走 innerHTML，
 		// 否则刷新瞬间会把 <tr><td> 源码直接显示出来。
 		refs.tbody = E('tbody', {});
-		refs.tbody.innerHTML = emptyRow(7, '加载中…');
+		refs.tbody.innerHTML = emptyRow(8, '加载中…');
 
 		var table = E('table', { 'class': 'g-table' }, [refs.cols, refs.thead, refs.tbody]);
 		var tableWrap = E('div', { 'class': 'g-tw' }, [table]);
@@ -305,9 +366,9 @@ return view.extend({
 			refs.tabs.querySelectorAll('.g-tab').forEach(function(el) {
 				el.classList.toggle('on', el.getAttribute('data-tab') === t);
 			});
-			// 最近连接固定看 24 小时、告警不分协议 —— 用 display 直接收掉，别留空心位
-			show(refs.rangeLabel, t !== 'events');
-			show(refs.range, t !== 'events');
+			// 端口落点/最近连接只有 24h 明细；告警不分协议 —— 用 display 直接收掉，别留空心位
+			show(refs.rangeLabel, t !== 'ports' && t !== 'events');
+			show(refs.range, t !== 'ports' && t !== 'events');
 			show(refs.protoLabel, t !== 'alerts');
 			show(refs.proto, t !== 'alerts');
 			loadList();
@@ -326,9 +387,11 @@ return view.extend({
 		function loadSummary() {
 			return api('view=summary').then(function(d) {
 				if (!d || d.error) throw new Error('no data');
+				var s = d.stats || {};
 				refs.stat.className = 'g-pill';
 				refs.dot.className = 'g-dot';
 				refs.status.textContent = '采集中';
+				ST.wan = d.wan || '';
 				refs.wan.textContent = d.wan ? 'WAN ' + d.wan : '';
 				refs.uptime.textContent = '已运行 ' + Math.floor((d.uptime || 0) / 86400) + ' 天 ' +
 					Math.floor((d.uptime % 86400) / 3600) + ' 小时';
@@ -336,10 +399,22 @@ return view.extend({
 				var ex = fmtExposed(d.exposed);
 				refs.exposed.textContent = ex.text ? '对外端口 ' + ex.text : '';
 				refs.exposed.title = ex.title;
-				refs['c-conn'].textContent = d.stats.conn24;
-				refs['c-ips'].textContent = d.stats.ips24;
-				refs['c-active'].textContent = d.stats.active;
-				refs['c-alerts'].textContent = d.stats.alerts24;
+
+				refs['c-conn'].textContent = s.total24 != null ? s.total24 : (s.conn24 || 0);
+				refs['c-conn-s'].textContent = 'TCP ' + (s.tcp24 || 0) + ' · UDP ' + (s.udp24 || 0);
+				refs['c-ips'].textContent = s.src24 != null ? s.src24 : (s.ips24 || 0);
+				refs['c-ips-s'].textContent = 'TCP ' + (s.srctcp || 0) + ' · UDP ' + (s.srcudp || 0);
+				refs['c-watch'].textContent = s.watch24 || 0;
+				refs['c-watch-s'].textContent = '命中公网服务端口';
+				refs['c-alerts'].textContent = s.alerts24 || 0;
+				refs['c-alerts-s'].textContent = '仅统计公网端口与扫描';
+
+				var cover = '明细覆盖 ' + fmtSpan(s.span_m);
+				if (s.capped) cover += '（已封顶）';
+				refs.cover.textContent = cover;
+				refs.cover.title = s.capped
+					? '连接明细达到条数上限，24 小时窗口内较早的记录已被挤出'
+					: '连接明细实际覆盖时长';
 			}).catch(function() {
 				refs.stat.className = 'g-pill err';
 				refs.dot.className = 'g-dot err';
@@ -350,14 +425,17 @@ return view.extend({
 		function loadList() {
 			renderHead();
 			var qs = 'view=' + ST.tab + '&range=' + ST.range + '&page=' + ST.page +
-				'&size=' + ST.size + '&proto=' + ST.proto;
+				'&size=' + ST.size + '&proto=' + ST.proto + '&only=' + ST.only;
 			return api(qs).then(function(d) {
 				ST.total = d.total || 0;
 				var rows = d.rows || [];
 				var n = COLS[ST.tab].length;
+				var empty = ST.only === 'watch'
+					? '暂无需要关注的访问，切到「全部流量」可查看正常 P2P/视频回连'
+					: '暂无数据';
 				refs.tbody.innerHTML = rows.length
 					? rows.map(function(x) { return rowHTML(ST.tab, x); }).join('')
-					: emptyRow(n, '暂无数据');
+					: emptyRow(n, empty);
 				var pages = Math.max(1, Math.ceil(ST.total / ST.size));
 				refs.count.textContent = '共 ' + ST.total + ' 条';
 				refs.pageinfo.textContent = '第 ' + ST.page + ' / ' + pages + ' 页';

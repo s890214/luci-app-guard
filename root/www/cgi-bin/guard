@@ -1,11 +1,13 @@
 #!/bin/sh
 # luci-app-guard 数据接口
-# view=summary|sources|alerts|events & range=24h|7d|30d & page=N & size=N & proto=tcp|all
+# view=summary|sources|ports|alerts|events
+# range=24h|7d|30d  page=N  size=N  proto=tcp|all  only=watch|all
 
-DIR=/tmp/guard
-DATA=/etc/guard
+DIR=${GUARD_DIR:-/tmp/guard}
+DATA=${GUARD_DATA:-/etc/guard}
 DAILY=$DATA/daily
 ALERTS=$DATA/alerts.tsv
+LIB=${GUARD_LIB:-/usr/lib/guard/class.awk}
 
 qs() { echo "$QUERY_STRING" | tr '&' '\n' | awk -F= -v k="$1" '$1==k {print $2; exit}'; }
 num() { case "$1" in ''|*[!0-9]*) echo "$2" ;; *) echo "$1" ;; esac; }
@@ -13,13 +15,15 @@ num() { case "$1" in ''|*[!0-9]*) echo "$2" ;; *) echo "$1" ;; esac; }
 view=$(qs view);  [ -z "$view" ] && view=summary
 range=$(qs range); [ -z "$range" ] && range=24h
 page=$(num "$(qs page)" 1)
-size=$(num "$(qs size)" 50)
+size=$(num "$(qs size)" 15)
 proto=$(qs proto); [ -z "$proto" ] && proto=tcp
+only=$(qs only); [ -z "$only" ] && only=watch
 [ "$size" -gt 200 ] && size=200
 [ "$page" -lt 1 ] && page=1
 
 now=$(date +%s)
 today=$(date +%F)
+tab=$(printf '\t')
 
 printf 'Content-Type: application/json; charset=utf-8\r\n'
 printf 'Cache-Control: no-store\r\n'
@@ -31,18 +35,40 @@ case "$range" in
 	*)   days=1 ;;
 esac
 
-sources_24h() { [ -s "$DIR/ips.tsv" ] && cat "$DIR/ips.tsv"; }
+# 24h 来源：统一成 ip total tcp udp ports portlist last watch topdst
+sources_24h() {
+	[ -s "$DIR/ips.tsv" ] && awk -F'\t' '{ print $1 "\t" $2 "\t" $9 "\t" $10 "\t" $5 "\t" $8 "\t" $4 "\t" $11 "\t" $15 }' "$DIR/ips.tsv"
+}
 
+# 7/30 天来源：按 IP 合并每日汇总，watch = 端口清单命中公网端口
 sources_range() {
-	cut=$(date -d "@$((now - days*86400))" +%F)
-	for f in "$DAILY"/*.tsv; do
-		[ -f "$f" ] || continue
-		b=$(basename "$f" .tsv)
-		[ "$b" = "$today" ] && continue
-		[ "$b" \< "$cut" ] && continue
-		cat "$f"
-	done
-	[ -s "$DIR/today.tsv" ] && awk -F'\t' '{print $1"\t"$9"\t"$10"\t"$5"\t"$8"\t"$3"\t"$4}' "$DIR/today.tsv"
+	cut=$(date -d "@$((now - days * 86400))" +%F)
+	{
+		for f in "$DAILY"/*.tsv; do
+			[ -f "$f" ] || continue
+			b=$(basename "$f" .tsv)
+			[ "$b" = "$today" ] && continue
+			[ "$b" \< "$cut" ] && continue
+			cat "$f"
+		done
+		[ -s "$DIR/today.tsv" ] && awk -F'\t' '{ print $1 "\t" $9 "\t" $10 "\t" $5 "\t" $8 "\t" $3 "\t" $4 }' "$DIR/today.tsv"
+	} | awk -F'\t' -v MAPDIR="$DIR" "$(cat "$LIB")"'
+		{
+			ip = $1; tcp[ip] += $2; udp[ip] += $3; ports[ip] += $4
+			if (!(ip in first) || $6 + 0 < first[ip]) first[ip] = $6 + 0
+			if ($7 + 0 > last[ip]) last[ip] = $7 + 0
+			n = split($5, p, ",")
+			for (i = 1; i <= n; i++)
+				if (p[i] != "" && index("," pl[ip] ",", "," p[i] ",") == 0)
+					pl[ip] = pl[ip] (pl[ip] == "" ? "" : ",") p[i]
+		}
+		END {
+			for (ip in tcp) {
+				w = 0; n = split(pl[ip], p, ",")
+				for (i = 1; i <= n; i++) if (p[i] in EX) { w = 1; break }
+				printf "%s\t%d\t%d\t%d\t%d\t%s\t%d\t%d\t\n", ip, tcp[ip] + udp[ip], tcp[ip], udp[ip], ports[ip], pl[ip], last[ip], w
+			}
+		}'
 }
 
 case "$view" in
@@ -51,57 +77,119 @@ summary)
 	;;
 
 sources)
-	if [ "$days" -le 1 ]; then
-		src=$(sources_24h | awk -F'\t' '{printf "%s\t%d\t%d\t%d\t%d\t%s\t%d\n", $1, $9+$10, $9, $10, $5, $8, $4}')
-	else
-		src=$(sources_range | awk -F'\t' '
-			{ ip=$1; tcp[ip]+=$2; udp[ip]+=$3; ports[ip]+=$4
-			  if (!(ip in first) || $6+0 < first[ip]) first[ip]=$6+0
-			  if ($7+0 > last[ip]) last[ip]=$7+0
-			  n=split($5,p,","); for (i=1;i<=n;i++) if (index(","pl[ip]",", "," p[i] ",")==0) pl[ip]=pl[ip] (pl[ip]==""?"":",") p[i]
+	[ "$days" -le 1 ] && src=$(sources_24h) || src=$(sources_range)
+	printf '%s\n' "$src" | awk -F'\t' -v MAPDIR="$DIR" \
+		-v ONLY="$only" -v PROTO="$proto" -v PAGE="$page" -v SIZE="$size" \
+		-v ALERTS="$ALERTS" -v NOW="$now" -v DAYS="$days" "$(cat "$LIB")"'
+		function j(s) { gsub(/["\\\t\r\n]/, " ", s); return s }
+		BEGIN {
+			while ((getline l < (MAPDIR "/geo.tsv")) > 0) {
+				split(l, a, "\t"); C[a[1]] = a[2]; R[a[1]] = a[3]; I[a[1]] = a[4]
 			}
-			END { for (ip in tcp) printf "%s\t%d\t%d\t%d\t%d\t%s\t%d\n", ip, tcp[ip]+udp[ip], tcp[ip], udp[ip], ports[ip], pl[ip], last[ip] }')
-	fi
-	# 默认只看有 TCP 的来源；all 模式额外保留连接数 >=10 的 UDP 来源
-	if [ "$proto" = "all" ]; then
-		src=$(printf '%s\n' "$src" | awk -F'\t' 'NF')
-	else
-		src=$(printf '%s\n' "$src" | awk -F'\t' 'NF && $3>0')
-	fi
-	total=$(printf '%s\n' "$src" | grep -c . )
-	rows=""
-	[ -n "$src" ] && rows=$(printf '%s\n' "$src" | sort -t"$(printf '\t')" -k2 -nr | awk -F'\t' -v p="$page" -v s="$size" '
-		NR > (p-1)*s && NR <= p*s {
-			if (n++) printf ","
-			printf "{\"ip\":\"%s\",\"total\":%d,\"tcp\":%d,\"udp\":%d,\"ports\":%d,\"portlist\":\"%s\",\"last\":\"%s\"}", $1, $2, $3, $4, $5, $6, strftime("%m-%d %H:%M", $7)
-		}')
-	printf '{"total":%d,"page":%d,"size":%d,"rows":[%s]}' "${total:-0}" "$page" "$size" "$rows"
+			while ((getline l < ALERTS) > 0) {
+				split(l, a, "|")
+				if (a[1] + 0 < NOW - DAYS * 86400) continue
+				if (a[2] == "HIGH_RATE") {
+					hit = 0; m = split(a[5], p, ",")
+					for (i = 1; i <= m; i++) if (p[i] in EX) { hit = 1; break }
+					if (!hit) continue
+				}
+				AL[a[3]] = 1
+			}
+		}
+		NF >= 8 {
+			ip = $1; total = $2; tcp = $3; udp = $4; ports = $5; pl = $6; last = $7; w = $8; dst = $9
+			if (ONLY == "watch" && !(w + 0 > 0 || (ip in AL))) next
+			if (PROTO != "all" && tcp + 0 == 0) next
+			cnt++
+			if (cnt > (PAGE - 1) * SIZE && cnt <= PAGE * SIZE) {
+				if (rows != "") rows = rows ","
+				rows = rows sprintf("{\"ip\":\"%s\",\"total\":%d,\"tcp\":%d,\"udp\":%d,\"ports\":%d,\"portlist\":\"%s\",\"last\":\"%s\",\"host\":\"%s\",\"country\":\"%s\",\"region\":\"%s\",\"isp\":\"%s\",\"watch\":%d}",
+					j(ip), total, tcp, udp, ports, j(pl), strftime("%m-%d %H:%M", last), j(HOST[dst]), j(C[ip]), j(R[ip]), j(I[ip]), w)
+			}
+		}
+		END { printf "{\"total\":%d,\"page\":%d,\"size\":%d,\"rows\":[%s]}", cnt, PAGE, SIZE, rows }'
+	;;
+
+ports)
+	awk -F'\t' -v MAPDIR="$DIR" \
+		-v ONLY="$only" -v PROTO="$proto" -v PAGE="$page" -v SIZE="$size" "$(cat "$LIB")"'
+		function j(s) { gsub(/["\\\t\r\n]/, " ", s); return s }
+		{
+			p = $1; c = $2; cnt = $3; sc = $4; last = $5; dst = $6; dp = $7; pr = $8; desc = $9
+			if (ONLY == "watch" && c != "L" && c != "P") next
+			if (PROTO != "all" && pr != PROTO) next
+			rn++
+			if (rn > (PAGE - 1) * SIZE && rn <= PAGE * SIZE) {
+				if (rows != "") rows = rows ","
+				rows = rows sprintf("{\"dst\":\"%s\",\"dport\":%d,\"proto\":\"%s\",\"count\":%d,\"srcs\":%d,\"last\":\"%s\",\"class\":\"%s\",\"host\":\"%s\",\"desc\":\"%s\"}",
+					j(dst), dp, pr, cnt, sc, strftime("%m-%d %H:%M", last), c, j(HOST[dst] != "" ? HOST[dst] : dst), j(desc))
+			}
+		}
+		END { printf "{\"total\":%d,\"page\":%d,\"size\":%d,\"rows\":[%s]}", rn, PAGE, SIZE, rows }' "$DIR/ports.tsv"
 	;;
 
 alerts)
-	cut=$((now - days*86400))
-	src=$(awk -F'|' -v cut="$cut" '$1>=cut && NF>=5' "$ALERTS" 2>/dev/null | sort -t'|' -k1 -nr)
-	total=$(printf '%s\n' "$src" | grep -c . )
-	rows=""
-	[ -n "$src" ] && rows=$(printf '%s\n' "$src" | awk -F'|' -v p="$page" -v s="$size" '
-		NR > (p-1)*s && NR <= p*s {
-			if (n++) printf ","
-			printf "{\"t\":\"%s\",\"type\":\"%s\",\"ip\":\"%s\",\"count\":%d,\"ports\":\"%s\"}", strftime("%Y-%m-%d %H:%M:%S", $1), $2, $3, $4, $5
-		}')
-	printf '{"total":%d,"page":%d,"size":%d,"rows":[%s]}' "${total:-0}" "$page" "$size" "$rows"
+	cut=$((now - days * 86400))
+	awk -F'|' -v cut="$cut" -v PAGE="$page" -v SIZE="$size" -v MAPDIR="$DIR" -v ONLY="$only" "$(cat "$LIB")"'
+		function j(s) { gsub(/["\\\t\r\n]/, " ", s); return s }
+		BEGIN {
+			while ((getline l < (MAPDIR "/geo.tsv")) > 0) {
+				split(l, a, "\t"); C[a[1]] = a[2]; R[a[1]] = a[3]; I[a[1]] = a[4]
+			}
+		}
+		$1 + 0 >= cut && NF >= 5 {
+			if (ONLY == "watch" && $2 == "HIGH_RATE") {
+				hit = 0; m = split($5, pp, ",")
+				for (i = 1; i <= m; i++) if (pp[i] in EX) { hit = 1; break }
+				if (!hit) next
+			}
+			rows[NR] = $0
+		}
+		END {
+			n = 0
+			for (k = NR; k >= 1; k--) {
+				if (!(k in rows)) continue
+				split(rows[k], a, "|")
+				n++
+				if (n <= (PAGE - 1) * SIZE || n > PAGE * SIZE) continue
+				if (json != "") json = json ","
+				json = json sprintf("{\"t\":\"%s\",\"type\":\"%s\",\"ip\":\"%s\",\"count\":%d,\"ports\":\"%s\",\"country\":\"%s\",\"region\":\"%s\",\"isp\":\"%s\"}",
+					strftime("%Y-%m-%d %H:%M:%S", a[1]), a[2], j(a[3]), a[4], j(a[5]), j(C[a[3]]), j(R[a[3]]), j(I[a[3]]))
+			}
+			printf "{\"total\":%d,\"page\":%d,\"size\":%d,\"rows\":[%s]}", n, PAGE, SIZE, json
+		}' "$ALERTS"
 	;;
 
 events)
-	src=$(awk -v pr="$proto" -v cut=$((now-86400)) 'NF>=5 && ($4==pr || pr=="all") && $1>=cut' "$DIR/conn.log" 2>/dev/null | sort -k1 -nr)
-	total=$(printf '%s\n' "$src" | grep -c . )
-	rows=""
-	[ -n "$src" ] && rows=$(printf '%s\n' "$src" | awk -v p="$page" -v s="$size" '
-		NR > (p-1)*s && NR <= p*s {
-			# 第 6 列是 DNAT 后的落点；老数据只有 5 列、UNREPLIED 记的是 "-"，都当空处理
+	tmp=$DIR/.events.$$
+	awk -v MAPDIR="$DIR" -v ONLY="$only" -v PROTO="$proto" -v NOW="$now" "$(cat "$LIB")"'
+		{
+			if (PROTO != "all" && $4 != PROTO) next
+			if ($1 + 0 < NOW - 86400) next
+			c = cls($3, $4, $6)
+			if (ONLY == "watch" && c != "L" && c != "P") next
+			print $0 "\t" c
+		}' "$DIR/conn.log" | sort -k1 -nr > "$tmp"
+	total=$(wc -l < "$tmp")
+	rows=$(awk -v PAGE="$page" -v SIZE="$size" -v MAPDIR="$DIR" '
+		function j(s) { gsub(/["\\\t\r\n]/, " ", s); return s }
+		BEGIN {
+			while ((getline l < (MAPDIR "/geo.tsv")) > 0) {
+				split(l, a, "\t"); C[a[1]] = a[2]; R[a[1]] = a[3]; I[a[1]] = a[4]
+			}
+			while ((getline l < (MAPDIR "/hosts.tsv")) > 0) {
+				split(l, a, "\t"); H[a[1]] = a[2]
+			}
+		}
+		NR > (PAGE - 1) * SIZE && NR <= PAGE * SIZE {
 			d = ($6 == "-" || $6 == "") ? "" : $6
-			if (n++) printf ","
-			printf "{\"t\":\"%s\",\"ip\":\"%s\",\"dport\":%d,\"proto\":\"%s\",\"exposed\":%d,\"dst\":\"%s\"}", strftime("%m-%d %H:%M:%S", $1), $2, $3, $4, $5, d
-		}')
+			if (json != "") json = json ","
+			json = json sprintf("{\"t\":\"%s\",\"ip\":\"%s\",\"dport\":%d,\"proto\":\"%s\",\"exposed\":%d,\"dst\":\"%s\",\"class\":\"%s\",\"host\":\"%s\",\"country\":\"%s\",\"region\":\"%s\",\"isp\":\"%s\"}",
+				strftime("%m-%d %H:%M:%S", $1), j($2), $3, $4, $5, j(d), $7, j(H[d]), j(C[$2]), j(R[$2]), j(I[$2]))
+		}
+		END { printf "%s", json }' "$tmp")
+	rm -f "$tmp"
 	printf '{"total":%d,"page":%d,"size":%d,"rows":[%s]}' "${total:-0}" "$page" "$size" "$rows"
 	;;
 
