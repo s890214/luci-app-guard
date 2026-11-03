@@ -1,0 +1,88 @@
+name: Build luci-app-guard
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'root/**'
+      - 'Makefile'
+      - '.github/workflows/build-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve package version
+        id: ver
+        run: |
+          V=$(sed -n 's/^PKG_VERSION:=//p' Makefile)
+          R=$(sed -n 's/^PKG_RELEASE:=//p' Makefile)
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "release=$R" >> "$GITHUB_OUTPUT"
+          echo "tag=v$V-r$R" >> "$GITHUB_OUTPUT"
+
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd rsync
+
+      - name: Fetch ImmortalWrt SDK (apk)
+        run: |
+          BASE=https://downloads.immortalwrt.org/snapshots/targets/qualcommax/ipq60xx
+          FILE=$(curl -fsSL "$BASE/" | grep -oE 'immortalwrt-sdk-[^"]*Linux-x86_64\.tar\.zst' | head -1)
+          echo "SDK: $FILE"
+          curl -fsSL -o sdk.tar.zst "$BASE/$FILE"
+          tar --zstd -xf sdk.tar.zst
+          SDK=$(ls -d immortalwrt-sdk-*.Linux-x86_64 | head -1)
+          echo "SDK_DIR=$PWD/$SDK" >> "$GITHUB_ENV"
+
+      - name: Prepare feeds
+        run: |
+          cd "$SDK_DIR"
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Add package and build
+        run: |
+          cd "$SDK_DIR"
+          mkdir -p package/luci-app-guard
+          rsync -a --exclude '.git' --exclude '.github' "$GITHUB_WORKSPACE/" package/luci-app-guard/
+          echo "CONFIG_PACKAGE_luci-app-guard=m" >> .config
+          make defconfig
+          make package/luci-app-guard/compile -j"$(nproc)" V=s
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p out
+          find "$SDK_DIR/bin/packages" -name 'luci-app-guard-*.apk' -exec cp -v {} out/ \;
+          ls -lh out/
+          sha256sum out/*.apk > out/SHA256SUMS
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: luci-app-guard-apk
+          path: out/
+
+      - name: Publish release
+        if: github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.ver.outputs.tag }}"
+          gh release view "$TAG" >/dev/null 2>&1 && gh release delete "$TAG" --yes --cleanup-tag
+          gh release create "$TAG" out/*.apk out/SHA256SUMS \
+            --title "luci-app-guard ${{ steps.ver.outputs.version }}-${{ steps.ver.outputs.release }}" \
+            --notes "安装（ImmortalWrt/OpenWrt apk 固件）：
+          \`\`\`
+          wget -O /tmp/luci-app-guard.apk https://github.com/${{ github.repository }}/releases/download/$TAG/luci-app-guard-${{ steps.ver.outputs.version }}-r${{ steps.ver.outputs.release }}.apk
+          apk add --allow-untrusted /tmp/luci-app-guard.apk
+          \`\`\`
+          入口：LuCI → 服务 → 外部访问监控"
